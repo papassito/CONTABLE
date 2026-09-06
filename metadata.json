@@ -1,0 +1,6 @@
+{
+  "name": "Contable Fix by KLIK",
+  "description": "Estructura base limpia y modular en Go para Contable Fix by KLIK.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
