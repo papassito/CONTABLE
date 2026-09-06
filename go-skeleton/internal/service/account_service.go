@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/klik/contable-fix/internal/domain"
-	"github.com/klik/contable-fix/internal/repository"
+	"github.com/klik/fcos-kernel/internal/domain"
+	"github.com/klik/fcos-kernel/internal/repository"
 )
 
 type AccountService interface {
@@ -109,6 +109,15 @@ func (s *accountService) DisableAccount(ctx context.Context, id string) error {
 
 	if account.CurrentBal != 0 {
 		return errors.New("no se puede desactivar una cuenta con saldo diferente de cero")
+	}
+
+	accounts, err := s.accountRepo.List(ctx, map[string]interface{}{"parent_id": id})
+	if err == nil {
+		for _, sub := range accounts {
+			if sub.Status == domain.AccountStatusActiva {
+				return errors.New("no se puede desactivar la cuenta porque tiene subcuentas activas")
+			}
+		}
 	}
 
 	account.Status = domain.AccountStatusInactiva

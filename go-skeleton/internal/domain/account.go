@@ -30,7 +30,7 @@ type Account struct {
 	Level       int           `json:"level"`
 	AcceptsMove bool          `json:"accepts_move"`
 	Status      AccountStatus `json:"status"`
-	CurrentBal  float64       `json:"current_balance"`
+	CurrentBal  int64         `json:"current_balance"`
 	CreatedAt   time.Time     `json:"created_at"`
 	UpdatedAt   time.Time     `json:"updated_at"`
 }

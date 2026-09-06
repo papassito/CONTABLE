@@ -5,9 +5,9 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/klik/contable-fix/config"
-	deliveryHttp "github.com/klik/contable-fix/internal/handler/http"
-	"github.com/klik/contable-fix/internal/service"
+	"github.com/klik/fcos-kernel/config"
+	deliveryHttp "github.com/klik/fcos-kernel/internal/handler/http"
+	"github.com/klik/fcos-kernel/internal/service"
 )
 
 func main() {
@@ -24,7 +24,7 @@ func main() {
 
 	// 3. Inicializar servicios de casos de uso
 	accountSvc := service.NewAccountService(nil)
-	journalSvc := service.NewJournalService(nil, nil, nil, nil)
+	journalSvc := service.NewJournalService(nil, nil, nil, nil, nil)
 
 	// 4. Inicializar handlers HTTP
 	accountHandler := deliveryHttp.NewAccountHandler(accountSvc)

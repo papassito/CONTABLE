@@ -18,8 +18,8 @@ type JournalEntry struct {
 	Reference   string        `json:"reference"`
 	Status      EntryStatus   `json:"status"`
 	Lines       []JournalLine `json:"lines"`
-	TotalDebit  float64       `json:"total_debit"`
-	TotalCredit float64       `json:"total_credit"`
+	TotalDebit  int64         `json:"total_debit"`
+	TotalCredit int64         `json:"total_credit"`
 	CreatedBy   string        `json:"created_by"`
 	CreatedAt   time.Time     `json:"created_at"`
 	UpdatedAt   time.Time     `json:"updated_at"`
@@ -31,8 +31,8 @@ type JournalLine struct {
 	AccountID      string    `json:"account_id"`
 	AccountCode    string    `json:"account_code"`
 	Description    string    `json:"description"`
-	Debit          float64   `json:"debit"`
-	Credit         float64   `json:"credit"`
+	Debit          int64     `json:"debit"`
+	Credit         int64     `json:"credit"`
 	ThirdPartyID   *string   `json:"third_party_id"`
 	CreatedAt      time.Time `json:"created_at"`
 }

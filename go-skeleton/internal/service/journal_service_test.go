@@ -2,17 +2,20 @@ package service_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
-	"github.com/klik/contable-fix/internal/domain"
-	"github.com/klik/contable-fix/internal/service"
+	"github.com/gowebpki/jcs"
+	"github.com/klik/fcos-kernel/internal/domain"
+	"github.com/klik/fcos-kernel/internal/service"
 )
 
 type mockJournalRepo struct {
-	entries map[string]*domain.JournalEntry
-	lines   map[string][]domain.JournalLine
+	entries      map[string]*domain.JournalEntry
+	lines        map[string][]domain.JournalLine
+	periodStatus string
 }
 
 func (m *mockJournalRepo) Create(ctx context.Context, entry *domain.JournalEntry) error {
@@ -46,6 +49,12 @@ func (m *mockJournalRepo) UpdateStatus(ctx context.Context, id string, status do
 }
 func (m *mockJournalRepo) GetLinesByEntryID(ctx context.Context, entryID string) ([]domain.JournalLine, error) {
 	return m.lines[entryID], nil
+}
+func (m *mockJournalRepo) CheckPeriodStatus(ctx context.Context, year int, month int) (string, error) {
+	if m.periodStatus != "" {
+		return m.periodStatus, nil
+	}
+	return "OPEN", nil
 }
 
 type mockAccountRepo struct {
@@ -84,7 +93,7 @@ func (m *mockAccountRepo) Delete(ctx context.Context, id string) error {
 }
 func (m *mockAccountRepo) UpdateBalance(ctx context.Context, id string, amount int64) error {
 	if a, ok := m.accounts[id]; ok {
-		a.CurrentBal += float64(amount)
+		a.CurrentBal += amount
 		return nil
 	}
 	return errors.New("not found")
@@ -92,9 +101,13 @@ func (m *mockAccountRepo) UpdateBalance(ctx context.Context, id string, amount i
 
 type mockLedgerRepo struct {
 	entries []domain.LedgerEntry
+	fail    bool
 }
 
 func (m *mockLedgerRepo) RecordMovements(ctx context.Context, entries []domain.LedgerEntry) error {
+	if m.fail {
+		return errors.New("ledger error")
+	}
 	m.entries = append(m.entries, entries...)
 	return nil
 }
@@ -105,10 +118,38 @@ func (m *mockLedgerRepo) GetTrialBalance(ctx context.Context, from, to time.Time
 	return nil, nil
 }
 
-type mockUOW struct{}
+type mockUOW struct {
+	wasRolledBack bool
+}
 
 func (m *mockUOW) Execute(ctx context.Context, fn func(txCtx context.Context) error) error {
-	return fn(ctx)
+	err := fn(ctx)
+	if err != nil {
+		m.wasRolledBack = true
+	}
+	return err
+}
+
+type mockAuditService struct {
+	events []map[string]any
+}
+
+func (m *mockAuditService) AppendEvent(ctx context.Context, tenantID, eventType, actorID string, payload any) error {
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	_, err = jcs.Transform(payloadJSON)
+	if err != nil {
+		return err
+	}
+	m.events = append(m.events, map[string]any{
+		"tenantID":  tenantID,
+		"eventType": eventType,
+		"actorID":   actorID,
+		"payload":   payload,
+	})
+	return nil
 }
 
 func TestCreateDraft_Balanced(t *testing.T) {
@@ -116,12 +157,13 @@ func TestCreateDraft_Balanced(t *testing.T) {
 	aRepo := &mockAccountRepo{accounts: make(map[string]*domain.Account)}
 	lRepo := &mockLedgerRepo{}
 	uow := &mockUOW{}
+	audit := &mockAuditService{}
 
 	// Configurar cuentas de prueba auxiliares activas
 	aRepo.accounts["1"] = &domain.Account{ID: "1", Code: "110505", Status: domain.AccountStatusActiva, AcceptsMove: true}
 	aRepo.accounts["2"] = &domain.Account{ID: "2", Code: "210505", Status: domain.AccountStatusActiva, AcceptsMove: true}
 
-	svc := service.NewJournalService(jRepo, aRepo, lRepo, uow)
+	svc := service.NewJournalService(jRepo, aRepo, lRepo, uow, audit)
 
 	entry := &domain.JournalEntry{
 		ID:     "entry-1",
@@ -146,8 +188,9 @@ func TestCreateDraft_Unbalanced(t *testing.T) {
 	aRepo := &mockAccountRepo{accounts: make(map[string]*domain.Account)}
 	lRepo := &mockLedgerRepo{}
 	uow := &mockUOW{}
+	audit := &mockAuditService{}
 
-	svc := service.NewJournalService(jRepo, aRepo, lRepo, uow)
+	svc := service.NewJournalService(jRepo, aRepo, lRepo, uow, audit)
 
 	entry := &domain.JournalEntry{
 		ID:     "entry-1",
@@ -169,6 +212,7 @@ func TestPostEntry_AlreadyPosted(t *testing.T) {
 	aRepo := &mockAccountRepo{accounts: make(map[string]*domain.Account)}
 	lRepo := &mockLedgerRepo{}
 	uow := &mockUOW{}
+	audit := &mockAuditService{}
 
 	entry := &domain.JournalEntry{
 		ID:     "entry-1",
@@ -177,10 +221,105 @@ func TestPostEntry_AlreadyPosted(t *testing.T) {
 	}
 	jRepo.entries["entry-1"] = entry
 
-	svc := service.NewJournalService(jRepo, aRepo, lRepo, uow)
+	svc := service.NewJournalService(jRepo, aRepo, lRepo, uow, audit)
 
 	err := svc.PostEntry(context.Background(), "entry-1")
 	if !errors.Is(err, domain.ErrEntryAlreadyPosted) {
 		t.Errorf("Se esperaba ErrEntryAlreadyPosted, obtenido %v", err)
+	}
+}
+
+func TestPostEntry_ClosedPeriod(t *testing.T) {
+	jRepo := &mockJournalRepo{entries: make(map[string]*domain.JournalEntry), lines: make(map[string][]domain.JournalLine)}
+	aRepo := &mockAccountRepo{accounts: make(map[string]*domain.Account)}
+	lRepo := &mockLedgerRepo{}
+	uow := &mockUOW{}
+	audit := &mockAuditService{}
+
+	entry := &domain.JournalEntry{
+		ID:     "entry-1",
+		Number: "001",
+		Date:   time.Now(),
+		Status: domain.EntryStatusBorrador,
+		Lines: []domain.JournalLine{
+			{AccountID: "1", Debit: 1000, Credit: 0},
+			{AccountID: "2", Debit: 0, Credit: 1000},
+		},
+	}
+	jRepo.entries["entry-1"] = entry
+	jRepo.periodStatus = "CLOSED"
+
+	svc := service.NewJournalService(jRepo, aRepo, lRepo, uow, audit)
+
+	err := svc.PostEntry(context.Background(), "entry-1")
+	if !errors.Is(err, domain.ErrClosedPeriod) {
+		t.Errorf("Se esperaba ErrClosedPeriod, obtenido %v", err)
+	}
+}
+
+func TestPostEntry_RollbackOnLedgerError(t *testing.T) {
+	jRepo := &mockJournalRepo{entries: make(map[string]*domain.JournalEntry), lines: make(map[string][]domain.JournalLine)}
+	aRepo := &mockAccountRepo{accounts: make(map[string]*domain.Account)}
+	lRepo := &mockLedgerRepo{fail: true}
+	uow := &mockUOW{}
+	audit := &mockAuditService{}
+
+	entry := &domain.JournalEntry{
+		ID:     "entry-1",
+		Number: "001",
+		Date:   time.Now(),
+		Status: domain.EntryStatusBorrador,
+		Lines: []domain.JournalLine{
+			{AccountID: "1", Debit: 1000, Credit: 0},
+			{AccountID: "2", Debit: 0, Credit: 1000},
+		},
+	}
+	jRepo.entries["entry-1"] = entry
+
+	// Configurar cuentas auxiliares activas
+	aRepo.accounts["1"] = &domain.Account{ID: "1", Code: "110505", Status: domain.AccountStatusActiva, AcceptsMove: true}
+	aRepo.accounts["2"] = &domain.Account{ID: "2", Code: "210505", Status: domain.AccountStatusActiva, AcceptsMove: true}
+
+	svc := service.NewJournalService(jRepo, aRepo, lRepo, uow, audit)
+
+	err := svc.PostEntry(context.Background(), "entry-1")
+	if err == nil {
+		t.Fatal("Se esperaba error al fallar RecordMovements")
+	}
+	if !uow.wasRolledBack {
+		t.Error("Se esperaba que la transacción hiciera rollback")
+	}
+}
+
+func TestPostEntry_RollbackOnBalanceUpdateError(t *testing.T) {
+	jRepo := &mockJournalRepo{entries: make(map[string]*domain.JournalEntry), lines: make(map[string][]domain.JournalLine)}
+	aRepo := &mockAccountRepo{accounts: make(map[string]*domain.Account)}
+	lRepo := &mockLedgerRepo{}
+	uow := &mockUOW{}
+	audit := &mockAuditService{}
+
+	entry := &domain.JournalEntry{
+		ID:     "entry-1",
+		Number: "001",
+		Date:   time.Now(),
+		Status: domain.EntryStatusBorrador,
+		Lines: []domain.JournalLine{
+			{AccountID: "1", Debit: 1000, Credit: 0},
+			{AccountID: "2", Debit: 0, Credit: 1000},
+		},
+	}
+	jRepo.entries["entry-1"] = entry
+
+	// Cuentas de prueba no configuradas en aRepo -> provocará error de "not found" en UpdateBalance
+	// provocando que falle la transacción.
+
+	svc := service.NewJournalService(jRepo, aRepo, lRepo, uow, audit)
+
+	err := svc.PostEntry(context.Background(), "entry-1")
+	if err == nil {
+		t.Fatal("Se esperaba error de balance al no encontrar cuentas")
+	}
+	if !uow.wasRolledBack {
+		t.Error("Se esperaba que la transacción hiciera rollback por error de balance")
 	}
 }

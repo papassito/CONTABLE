@@ -2,16 +2,24 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"time"
 
-	"github.com/klik/contable-fix/internal/domain"
-	"github.com/klik/contable-fix/internal/repository"
-	"github.com/klik/contable-fix/pkg/validator"
+	"github.com/gowebpki/jcs"
+	"github.com/klik/fcos-kernel/internal/domain"
+	"github.com/klik/fcos-kernel/internal/repository"
+	"github.com/klik/fcos-kernel/pkg/validator"
 )
 
 // UnitOfWork define el puerto para coordinar transacciones ACID.
 type UnitOfWork interface {
 	Execute(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
+type AuditService interface {
+	AppendEvent(ctx context.Context, tenantID, eventType, actorID string, payload any) error
 }
 
 type JournalService interface {
@@ -27,6 +35,7 @@ type journalService struct {
 	accountRepo repository.AccountRepository
 	ledgerRepo  repository.LedgerRepository
 	uow         UnitOfWork
+	auditSvc    AuditService
 }
 
 func NewJournalService(
@@ -34,12 +43,14 @@ func NewJournalService(
 	accountRepo repository.AccountRepository,
 	ledgerRepo repository.LedgerRepository,
 	uow UnitOfWork,
+	auditSvc AuditService,
 ) JournalService {
 	return &journalService{
 		journalRepo: journalRepo,
 		accountRepo: accountRepo,
 		ledgerRepo:  ledgerRepo,
 		uow:         uow,
+		auditSvc:    auditSvc,
 	}
 }
 
@@ -115,6 +126,16 @@ func (s *journalService) PostEntry(ctx context.Context, entryID string) error {
 	}
 
 	return s.uow.Execute(ctx, func(txCtx context.Context) error {
+		// Validar Periodo cerrado o declarado
+		year, month, _ := entry.Date.Date()
+		status, err := s.journalRepo.CheckPeriodStatus(txCtx, year, int(month))
+		if err != nil {
+			return err
+		}
+		if status == "CLOSED" || status == "DECLARED" {
+			return domain.ErrClosedPeriod
+		}
+
 		ledgerEntries := make([]domain.LedgerEntry, len(lines))
 		for i, line := range lines {
 			ledgerEntries[i] = domain.LedgerEntry{
@@ -152,57 +173,110 @@ func (s *journalService) PostEntry(ctx context.Context, entryID string) error {
 			}
 		}
 
-		return s.journalRepo.UpdateStatus(txCtx, entryID, domain.EntryStatusContabilizado)
+		err = s.journalRepo.UpdateStatus(txCtx, entryID, domain.EntryStatusContabilizado)
+		if err != nil {
+			return err
+		}
+
+		// Generar y emitir evento de auditoría canónico bajo RFC 8785
+		auditPayload := map[string]any{
+			"entry_id":    entry.ID,
+			"number":      entry.Number,
+			"total_debit": entry.TotalDebit,
+			"status":      string(domain.EntryStatusContabilizado),
+		}
+		canonicalHash, err := computeCanonicalHash(auditPayload)
+		if err != nil {
+			return err
+		}
+		auditPayload["canonical_hash"] = canonicalHash
+
+		if s.auditSvc != nil {
+			err = s.auditSvc.AppendEvent(txCtx, "default-tenant", "POST_CONTABILIZAR", "system-user", auditPayload)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
 	})
 }
 
 func (s *journalService) ReverseEntry(ctx context.Context, entryID string, reason string) (*domain.JournalEntry, error) {
-	original, err := s.journalRepo.GetByID(ctx, entryID)
-	if err != nil {
-		return nil, err
-	}
-	if original == nil {
-		return nil, domain.ErrAccountNotFound
-	}
-
-	originalLines, err := s.journalRepo.GetLinesByEntryID(ctx, entryID)
-	if err != nil {
-		return nil, err
-	}
-	if len(originalLines) == 0 {
-		originalLines = original.Lines
-	}
-
-	reversedLines := make([]domain.JournalLine, len(originalLines))
-	for i, line := range originalLines {
-		reversedLines[i] = domain.JournalLine{
-			AccountID:    line.AccountID,
-			AccountCode:  line.AccountCode,
-			Description:  "Reversión: " + line.Description,
-			Debit:        line.Credit,
-			Credit:       line.Debit,
-			ThirdPartyID: line.ThirdPartyID,
+	var reversedEntry *domain.JournalEntry
+	err := s.uow.Execute(ctx, func(txCtx context.Context) error {
+		original, err := s.journalRepo.GetByID(txCtx, entryID)
+		if err != nil {
+			return err
 		}
-	}
+		if original == nil {
+			return domain.ErrAccountNotFound
+		}
 
-	reversedEntry := &domain.JournalEntry{
-		Number:      "REV-" + original.Number,
-		Date:        time.Now(),
-		Concept:     "Reversión de " + original.Number + " - Motivo: " + reason,
-		Reference:   original.Number,
-		Status:      domain.EntryStatusBorrador,
-		Lines:       reversedLines,
-		TotalDebit:  original.TotalCredit,
-		TotalCredit: original.TotalDebit,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
-	}
+		originalLines, err := s.journalRepo.GetLinesByEntryID(txCtx, entryID)
+		if err != nil {
+			return err
+		}
+		if len(originalLines) == 0 {
+			originalLines = original.Lines
+		}
 
-	err = s.journalRepo.Create(ctx, reversedEntry)
+		reversedLines := make([]domain.JournalLine, len(originalLines))
+		for i, line := range originalLines {
+			reversedLines[i] = domain.JournalLine{
+				AccountID:    line.AccountID,
+				AccountCode:  line.AccountCode,
+				Description:  "Reversión: " + line.Description,
+				Debit:        line.Credit,
+				Credit:       line.Debit,
+				ThirdPartyID: line.ThirdPartyID,
+			}
+		}
+
+		reversedEntry = &domain.JournalEntry{
+			Number:      "REV-" + original.Number,
+			Date:        time.Now(),
+			Concept:     "Reversión de " + original.Number + " - Motivo: " + reason,
+			Reference:   original.Number,
+			Status:      domain.EntryStatusBorrador,
+			Lines:       reversedLines,
+			TotalDebit:  original.TotalCredit,
+			TotalCredit: original.TotalDebit,
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+		}
+
+		err = s.journalRepo.Create(txCtx, reversedEntry)
+		if err != nil {
+			return err
+		}
+
+		// Generar y emitir evento de auditoría canónico bajo RFC 8785
+		auditPayload := map[string]any{
+			"original_entry_id": original.ID,
+			"reversed_entry_id": reversedEntry.ID,
+			"reason":            reason,
+			"status":            string(domain.EntryStatusBorrador),
+		}
+		canonicalHash, err := computeCanonicalHash(auditPayload)
+		if err != nil {
+			return err
+		}
+		auditPayload["canonical_hash"] = canonicalHash
+
+		if s.auditSvc != nil {
+			err = s.auditSvc.AppendEvent(txCtx, "default-tenant", "VOID_ANULAR", "system-user", auditPayload)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
 	if err != nil {
 		return nil, err
 	}
-
 	return reversedEntry, nil
 }
 
@@ -224,4 +298,17 @@ func (s *journalService) GetEntry(ctx context.Context, id string) (*domain.Journ
 
 func (s *journalService) ListEntries(ctx context.Context, filter map[string]interface{}) ([]*domain.JournalEntry, error) {
 	return s.journalRepo.List(ctx, filter)
+}
+
+func computeCanonicalHash(payload any) (string, error) {
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	canonical, err := jcs.Transform(payloadJSON)
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.Sum256(canonical)
+	return hex.EncodeToString(hash[:]), nil
 }
