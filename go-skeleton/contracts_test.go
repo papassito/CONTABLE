@@ -1,4 +1,4 @@
-package contracts_test
+package integration_test
 
 import (
 	"crypto/sha256"

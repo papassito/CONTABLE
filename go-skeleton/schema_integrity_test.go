@@ -1,4 +1,4 @@
-package schema_test
+package integration_test
 
 import (
 	"database/sql"

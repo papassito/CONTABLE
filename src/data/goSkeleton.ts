@@ -21,9 +21,9 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/klik/contable-fix/config"
-	deliveryHttp "github.com/klik/contable-fix/internal/handler/http"
-	"github.com/klik/contable-fix/internal/service"
+	"github.com/klik/fcos-kernel/config"
+	deliveryHttp "github.com/klik/fcos-kernel/internal/handler/http"
+	"github.com/klik/fcos-kernel/internal/service"
 )
 
 func main() {
@@ -386,7 +386,7 @@ var (
 
 import (
 	"context"
-	"github.com/klik/contable-fix/internal/domain"
+	"github.com/klik/fcos-kernel/internal/domain"
 )
 
 // AccountRepository define el contrato para la persistencia del plan de cuentas
@@ -411,7 +411,7 @@ type AccountRepository interface {
 
 import (
 	"context"
-	"github.com/klik/contable-fix/internal/domain"
+	"github.com/klik/fcos-kernel/internal/domain"
 )
 
 // UnitOfWork define el contrato para coordinar transacciones ACID
@@ -441,7 +441,7 @@ type JournalRepository interface {
 import (
 	"context"
 	"time"
-	"github.com/klik/contable-fix/internal/domain"
+	"github.com/klik/fcos-kernel/internal/domain"
 )
 
 // LedgerRepository define el contrato para consultas de mayor y balances
@@ -462,7 +462,7 @@ type LedgerRepository interface {
 
 import (
 	"context"
-	"github.com/klik/contable-fix/internal/domain"
+	"github.com/klik/fcos-kernel/internal/domain"
 )
 
 // InvoiceRepository define el contrato para la persistencia de facturas
@@ -488,8 +488,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/klik/contable-fix/internal/domain"
-	"github.com/klik/contable-fix/internal/repository"
+	"github.com/klik/fcos-kernel/internal/domain"
+	"github.com/klik/fcos-kernel/internal/repository"
 )
 
 // AccountService define los casos de uso para cuentas contables
@@ -618,9 +618,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/klik/contable-fix/internal/domain"
-	"github.com/klik/contable-fix/internal/repository"
-	"github.com/klik/contable-fix/pkg/validator"
+	"github.com/klik/fcos-kernel/internal/domain"
+	"github.com/klik/fcos-kernel/internal/repository"
+	"github.com/klik/fcos-kernel/pkg/validator"
 )
 
 // JournalService define los casos de uso para asientos contables
@@ -854,8 +854,8 @@ func (s *journalService) ListEntries(ctx context.Context, filter map[string]inte
 import (
 	"context"
 	"time"
-	"github.com/klik/contable-fix/internal/domain"
-	"github.com/klik/contable-fix/internal/repository"
+	"github.com/klik/fcos-kernel/internal/domain"
+	"github.com/klik/fcos-kernel/internal/repository"
 )
 
 // LedgerService define los casos de uso para reportes y libro mayor
@@ -897,7 +897,7 @@ func (s *ledgerService) GenerateTrialBalance(ctx context.Context, from, to time.
 
 import (
 	"net/http"
-	"github.com/klik/contable-fix/internal/service"
+	"github.com/klik/fcos-kernel/internal/service"
 )
 
 // AccountHandler gestiona las peticiones HTTP del plan contable
@@ -932,7 +932,7 @@ func (h *AccountHandler) List(w http.ResponseWriter, r *http.Request) {
 
 import (
 	"net/http"
-	"github.com/klik/contable-fix/internal/service"
+	"github.com/klik/fcos-kernel/internal/service"
 )
 
 // JournalHandler gestiona las peticiones HTTP para asientos contables
@@ -1037,7 +1037,7 @@ func Error(w http.ResponseWriter, status int, message string) {
     code: `package validator
 
 import (
-	"github.com/klik/contable-fix/internal/domain"
+	"github.com/klik/fcos-kernel/internal/domain"
 )
 
 // ValidateDoubleEntry valida matemáticamente la partida doble (Débitos == Créditos) usando enteros exactos
@@ -1057,7 +1057,7 @@ func ValidateDoubleEntry(lines []domain.JournalLine) bool {
     layer: 'root',
     layerLabel: 'Módulo Go',
     description: 'Definición del módulo Go para Contable Fix by KLIK.',
-    code: `module github.com/klik/contable-fix
+    code: `module github.com/klik/fcos-kernel
 
 go 1.22
 `,
@@ -1139,5 +1139,5 @@ contable-fix/
 2. Cada función contiene un comentario \`// TODO:\` para implementar según tu motor de base de datos preferido (PostgreSQL, SQLite, MySQL o memoria).
 3. Ejecuta \`go run cmd/api/main.go\` para iniciar el servidor.
 `,
-  },
-  {
+  }
+];

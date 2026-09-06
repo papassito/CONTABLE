@@ -2,7 +2,7 @@ package http
 
 import (
 	"net/http"
-	"github.com/klik/contable-fix/internal/service"
+	"github.com/klik/fcos-kernel/internal/service"
 )
 
 type AccountHandler struct {

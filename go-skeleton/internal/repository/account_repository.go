@@ -2,7 +2,8 @@ package repository
 
 import (
 	"context"
-	"github.com/klik/contable-fix/internal/domain"
+
+	"github.com/klik/fcos-kernel/internal/domain"
 )
 
 type AccountRepository interface {
@@ -12,5 +13,5 @@ type AccountRepository interface {
 	List(ctx context.Context, filter map[string]interface{}) ([]*domain.Account, error)
 	Update(ctx context.Context, account *domain.Account) error
 	Delete(ctx context.Context, id string) error
-	UpdateBalance(ctx context.Context, id string, amount float64) error
+	UpdateBalance(ctx context.Context, id string, amount int64) error
 }

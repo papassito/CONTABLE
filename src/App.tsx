@@ -327,19 +327,14 @@ export default function App() {
       <footer className="border-t border-slate-800 px-5 py-2.5 bg-slate-900/90 text-xs text-slate-400 flex flex-col sm:flex-row items-center justify-between gap-2">
         <div className="flex items-center space-x-4">
           <span className="flex items-center space-x-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-            <strong className="text-slate-300">Contable Fix by KLIK</strong>
-          </span>
-          <span className="hidden sm:inline text-slate-700">•</span>
-          <span>Arquitectura limpia (Clean Architecture / Puertos y Adaptadores)</span>
-        </div>
-
-        <div className="flex items-center space-x-3 text-slate-400 font-mono text-[11px]">
-          <span>Archivos en Go: {GO_SKELETON_FILES.length}</span>
-          <span className="text-slate-700">•</span>
-          <span>Sin dependencias invasivas</span>
-        </div>
-      </footer>
+        <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+        <span>FCOS Kernel v2.2.0 • Listo</span>
+      </span>
     </div>
+    <div className="flex items-center space-x-4 font-mono text-[10px] text-slate-500">
+      <span>Klik Technologies © {new Date().getFullYear()}</span>
+    </div>
+  </footer>
+</div>
   );
 }

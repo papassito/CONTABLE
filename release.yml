@@ -1,0 +1,54 @@
+name: Build and Release FCOS v2.2
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Código
+        uses: actions/checkout@v4
+
+      - name: Configurar Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Configurar Node.js & pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Instalar CLI de Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Instalar Dependencias Frontend
+        run: pnpm install
+
+      - name: Compilar Ejecutable Nativo con Wails
+        run: wails build -platform windows/amd64 -clean -nsis
+
+      - name: Firma Digital EV (signtool)
+        env:
+          CERT_BASE64: ${{ secrets.CODE_SIGNING_CERT_BASE64 }}
+          CERT_PASS: ${{ secrets.CODE_SIGNING_CERT_PASSWORD }}
+        run: |
+          if ("$env:CERT_BASE64" -ne "") {
+            $certPath = "$env:TEMP\cert.pfx"
+            [System.Convert]::FromBase64String($env:CERT_BASE64) | Set-Content -Path $certPath -Encoding Byte
+            & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f $certPath /p $env:CERT_PASS /tr http://timestamp.digicert.com /td sha256 /fd sha256 "build\bin\ContableFixByKlik.exe"
+            Remove-Item $certPath
+          } else {
+            Write-Host "Certificado EV no configurado en GitHub Secrets. Generando release sin firma."
+          }
+
+      - name: Publicar Release en GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/bin/ContableFixByKlik.exe
+            build/bin/ContableFixByKlik-installer.exe
