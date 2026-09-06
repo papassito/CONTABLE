@@ -247,3 +247,16 @@ BEGIN
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Registro dinámico de selectores para robots RPA
+CREATE TABLE rpa_layout_registry (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    portal_code VARCHAR(50) NOT NULL,
+    element_key VARCHAR(100) NOT NULL,
+    css_selector VARCHAR(255) NOT NULL,
+    xpath_selector VARCHAR(255) NOT NULL,
+    version_tag VARCHAR(20) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_at_utc TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC'),
+    CONSTRAINT uq_portal_element UNIQUE (portal_code, element_key, version_tag)
+);

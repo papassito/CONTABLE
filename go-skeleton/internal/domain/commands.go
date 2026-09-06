@@ -51,3 +51,12 @@ type GetExpedienteByIDQuery struct {
 type QueryHandler[Q any, R any] interface {
 	Handle(ctx context.Context, query Q) (R, error)
 }
+
+// =============================================================================
+// RESPONSE CONTRACTS
+// =============================================================================
+type ExpedienteResponse struct {
+	ExpedienteID   string `json:"expediente_id"`
+	ExpedienteCode string `json:"expediente_code"`
+	CurrentStage   string `json:"current_stage"`
+}

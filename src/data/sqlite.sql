@@ -113,3 +113,16 @@ BEFORE DELETE ON audit_hash_chain
 BEGIN
     SELECT RAISE(ABORT, 'VIOLACIÓN CONSTITUCIONAL FCOS v2.2: Prohibido eliminar eventos de auditoría.');
 END;
+
+-- Registro dinámico de selectores para robots RPA
+CREATE TABLE rpa_layout_registry (
+    id TEXT PRIMARY KEY,
+    portal_code TEXT NOT NULL,
+    element_key TEXT NOT NULL,
+    css_selector TEXT NOT NULL,
+    xpath_selector TEXT NOT NULL,
+    version_tag TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    updated_at_utc TEXT NOT NULL DEFAULT (STRFTIME('%Y-%m-%dT%H:%M:%SZ', 'NOW')),
+    UNIQUE(portal_code, element_key, version_tag)
+);
