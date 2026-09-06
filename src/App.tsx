@@ -10,11 +10,13 @@ import {
   Sparkles,
   ExternalLink,
   Code2,
-  FolderGit2
+  FolderGit2,
+  ShieldAlert
 } from 'lucide-react';
 import { GO_SKELETON_FILES, GoFile } from './data/goSkeleton';
 import { CodeViewer } from './components/CodeViewer';
 import { ArchitectureView } from './components/ArchitectureView';
+import { AuditView } from './components/AuditView';
 import { downloadGoSkeletonZip } from './utils/zipExport';
 
 type LayerFilter = 'all' | 'domain' | 'repository' | 'service' | 'handler' | 'config' | 'pkg' | 'root' | 'cmd';
@@ -23,7 +25,7 @@ export default function App() {
   const [selectedFilePath, setSelectedFilePath] = useState<string>('internal/domain/account.go');
   const [layerFilter, setLayerFilter] = useState<LayerFilter>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [viewMode, setViewMode] = useState<'code' | 'architecture'>('code');
+  const [viewMode, setViewMode] = useState<'code' | 'architecture' | 'audit'>('code');
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
   const [copiedTree, setCopiedTree] = useState<boolean>(false);
 
@@ -155,6 +157,16 @@ export default function App() {
             >
               <Layers className="w-3.5 h-3.5" />
               <span>Arquitectura & Capas</span>
+            </button>
+            <button
+              id="btn-view-audit"
+              onClick={() => setViewMode('audit')}
+              className={`px-3 py-1 rounded transition-colors flex items-center space-x-1.5 cursor-pointer ${
+                viewMode === 'audit' ? 'bg-cyan-600 text-white font-medium' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span>Auditoría & Guía</span>
             </button>
           </div>
 
@@ -298,9 +310,8 @@ export default function App() {
 
         {/* Main Content Area */}
         <main className="flex-1 overflow-hidden p-4 bg-slate-950">
-          {viewMode === 'code' ? (
-            <CodeViewer file={currentFile} />
-          ) : (
+          {viewMode === 'code' && <CodeViewer file={currentFile} />}
+          {viewMode === 'architecture' && (
             <ArchitectureView
               onSelectFile={(path) => {
                 setSelectedFilePath(path);
@@ -308,6 +319,7 @@ export default function App() {
               }}
             />
           )}
+          {viewMode === 'audit' && <AuditView />}
         </main>
       </div>
 

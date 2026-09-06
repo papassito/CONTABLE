@@ -906,4 +906,45 @@ contable-fix/
 3. Ejecuta \`go run cmd/api/main.go\` para iniciar el servidor.
 `,
   },
+  {
+    path: 'AUDIT_GUIDE.md',
+    name: 'AUDIT_GUIDE.md',
+    layer: 'root',
+    layerLabel: 'Guía de Auditoría',
+    description: 'Directrices técnicas y criterios de aceptación del auditor.',
+    code: `# DICTAMEN DE AUDITORÍA Y GUÍA TÉCNICA
+## Proyecto: Contable Fix by KLIK
+**Rol:** Auditor Técnico & Arquitecto de Software
+**Destinatario:** Equipo de Desarrollo Backend en Go
+
+---
+
+### 1. REGLAS CONTABLES NO NEGOCIABLES (INVARIANTES DEL SISTEMA)
+
+1. **Invariante de Partida Doble:**
+   - Para todo comprobante o asiento contable (\`JournalEntry\`), la suma total de débitos DEBE ser idéntica a la suma total de créditos (\`∑ Débitos == ∑ Créditos\`).
+   - El sistema debe rechazar cualquier intento de contabilizar un asiento desbalanceado con \`ErrUnbalancedJournal\`.
+
+2. **Inmutabilidad de Asientos Contabilizados:**
+   - Una vez que un asiento pasa al estado \`CONTABILIZADO\`, está terminantemente **PROHIBIDO** ejecutar sentencias \`UPDATE\` o \`DELETE\` sobre el asiento o sus líneas.
+   - Si se requiere corregir un error, se debe generar un asiento de reversión/anulación con contrapartida (\`ReverseEntry()\`), dejando trazabilidad del motivo y referencia al asiento original.
+
+3. **Restricción de Cuentas Auxiliares:**
+   - Las transacciones en las líneas del asiento (\`JournalLine\`) solo pueden asociarse a cuentas auxiliares que tengan \`accepts_move = true\`.
+   - Queda prohibido imputar movimientos a cuentas de nivel superior o mayorizadoras.
+
+4. **Precisión Numérica y Manejo Monetario:**
+   - Evitar \`float64\` para saldos acumulados en producción debido a errores de redondeo de punto flotante de IEEE 754.
+   - Recomendación: Utilizar la librería \`github.com/shopspring/decimal\` o enteros de centavos (\`int64\`), mapeados a columnas \`NUMERIC(18, 4)\` en PostgreSQL.
+
+---
+
+### 2. HOJA DE RUTA DE IMPLEMENTACIÓN EN 4 FASES
+
+- **FASE 1: Capa de Persistencia y Transaccionalidad** (PostgreSQL / \`*sql.Tx\`)
+- **FASE 2: Lógica del Plan de Cuentas** (\`account_service.go\`)
+- **FASE 3: Motor de Asientos y Libro Mayor** (\`journal_service.go\` y \`ledger_service.go\`)
+- **FASE 4: Capa de Entrega HTTP, Seguridad y Tests** (\`handler/http\` y \`*_test.go\`)
+`,
+  },
 ];
