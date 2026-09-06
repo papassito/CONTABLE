@@ -43,7 +43,7 @@ func main() {
 
 	// 3. Inicializar servicios de casos de uso
 	accountSvc := service.NewAccountService(nil)
-	journalSvc := service.NewJournalService(nil, nil, nil)
+	journalSvc := service.NewJournalService(nil, nil, nil, nil)
 
 	// 4. Inicializar handlers HTTP
 	accountHandler := deliveryHttp.NewAccountHandler(accountSvc)
@@ -168,7 +168,7 @@ type Account struct {
 	Level       int           \`json:"level"\`        // Nivel jerárquico (1 a 5)
 	AcceptsMove bool          \`json:"accepts_move"\` // ¿Acepta movimientos directos?
 	Status      AccountStatus \`json:"status"\`
-	CurrentBal  float64       \`json:"current_balance"\`
+	CurrentBal  int64         \`json:"current_balance"\`
 	CreatedAt   time.Time     \`json:"created_at"\`
 	UpdatedAt   time.Time     \`json:"updated_at"\`
 }
@@ -204,8 +204,8 @@ type JournalEntry struct {
 	Reference   string        \`json:"reference"\`     // N° Factura o documento de origen
 	Status      EntryStatus   \`json:"status"\`
 	Lines       []JournalLine \`json:"lines"\`
-	TotalDebit  float64       \`json:"total_debit"\`
-	TotalCredit float64       \`json:"total_credit"\`
+	TotalDebit  int64         \`json:"total_debit"\`
+	TotalCredit int64         \`json:"total_credit"\`
 	CreatedBy   string        \`json:"created_by"\`
 	CreatedAt   time.Time     \`json:"created_at"\`
 	UpdatedAt   time.Time     \`json:"updated_at"\`
@@ -218,8 +218,8 @@ type JournalLine struct {
 	AccountID      string    \`json:"account_id"\`
 	AccountCode    string    \`json:"account_code"\`
 	Description    string    \`json:"description"\`
-	Debit          float64   \`json:"debit"\`
-	Credit         float64   \`json:"credit"\`
+	Debit          int64     \`json:"debit"\`
+	Credit         int64     \`json:"credit"\`
 	ThirdPartyID   *string   \`json:"third_party_id"\` // Identificación del tercero (NIT / CC)
 	CreatedAt      time.Time \`json:"created_at"\`
 }
@@ -241,9 +241,9 @@ type LedgerEntry struct {
 	AccountID   string    \`json:"account_id"\`
 	AccountCode string    \`json:"account_code"\`
 	EntryDate   time.Time \`json:"entry_date"\`
-	Debit       float64   \`json:"debit"\`
-	Credit      float64   \`json:"credit"\`
-	Balance     float64   \`json:"balance"\`
+	Debit       int64     \`json:"debit"\`
+	Credit      int64     \`json:"credit"\`
+	Balance     int64     \`json:"balance"\`
 	Reference   string    \`json:"reference"\`
 }
 
@@ -251,10 +251,10 @@ type LedgerEntry struct {
 type TrialBalanceItem struct {
 	AccountCode    string  \`json:"account_code"\`
 	AccountName    string  \`json:"account_name"\`
-	InitialBalance float64 \`json:"initial_balance"\`
-	TotalDebit     float64 \`json:"total_debit"\`
-	TotalCredit    float64 \`json:"total_credit"\`
-	FinalBalance   float64 \`json:"final_balance"\`
+	InitialBalance int64   \`json:"initial_balance"\`
+	TotalDebit     int64   \`json:"total_debit"\`
+	TotalCredit    int64   \`json:"total_credit"\`
+	FinalBalance   int64   \`json:"final_balance"\`
 }
 `,
   },
@@ -296,9 +296,9 @@ type Invoice struct {
 	ThirdPartyID   string        \`json:"third_party_id"\`
 	IssueDate      time.Time     \`json:"issue_date"\`
 	DueDate        time.Time     \`json:"due_date"\`
-	Subtotal       float64       \`json:"subtotal"\`
-	TaxAmount      float64       \`json:"tax_amount"\`
-	Total          float64       \`json:"total"\`
+	Subtotal       int64         \`json:"subtotal"\`
+	TaxAmount      int64         \`json:"tax_amount"\`
+	Total          int64         \`json:"total"\`
 	Items          []InvoiceItem \`json:"items"\`
 	JournalEntryID *string       \`json:"journal_entry_id"\` // Asiento contable generado automáticamente
 	CreatedAt      time.Time     \`json:"created_at"\`
@@ -312,10 +312,10 @@ type InvoiceItem struct {
 	Description string  \`json:"description"\`
 	AccountID   string  \`json:"account_id"\` // Cuenta contable vinculada
 	Quantity    float64 \`json:"quantity"\`
-	UnitPrice   float64 \`json:"unit_price"\`
-	Discount    float64 \`json:"discount"\`
+	UnitPrice   int64   \`json:"unit_price"\`
+	Discount    int64   \`json:"discount"\`
 	TaxRate     float64 \`json:"tax_rate"\`
-	Total       float64 \`json:"total"\`
+	Total       int64   \`json:"total"\`
 }
 `,
   },
@@ -397,7 +397,7 @@ type AccountRepository interface {
 	List(ctx context.Context, filter map[string]interface{}) ([]*domain.Account, error)
 	Update(ctx context.Context, account *domain.Account) error
 	Delete(ctx context.Context, id string) error
-	UpdateBalance(ctx context.Context, id string, amount float64) error
+	UpdateBalance(ctx context.Context, id string, amount int64) error
 }
 `,
   },
@@ -413,6 +413,11 @@ import (
 	"context"
 	"github.com/klik/contable-fix/internal/domain"
 )
+
+// UnitOfWork define el contrato para coordinar transacciones ACID
+type UnitOfWork interface {
+	WithTransaction(ctx context.Context, fn func(ctx context.Context) error) error
+}
 
 // JournalRepository define el contrato para la persistencia de asientos contables
 type JournalRepository interface {
@@ -480,6 +485,9 @@ type InvoiceRepository interface {
 
 import (
 	"context"
+	"errors"
+	"fmt"
+
 	"github.com/klik/contable-fix/internal/domain"
 	"github.com/klik/contable-fix/internal/repository"
 )
@@ -506,33 +514,95 @@ func NewAccountService(repo repository.AccountRepository) AccountService {
 }
 
 func (s *accountService) CreateAccount(ctx context.Context, account *domain.Account) error {
-	// TODO: Validar jerarquía, unicidad de código y guardar
-	return nil
+	existing, err := s.accountRepo.GetByCode(ctx, account.Code)
+	if err == nil && existing != nil {
+		return fmt.Errorf("la cuenta contable con código %s ya existe", account.Code)
+	}
+
+	if len(account.Code) == 0 {
+		return errors.New("el código contable no puede estar vacío")
+	}
+
+	firstChar := account.Code[0]
+	var expectedType domain.AccountType
+	switch firstChar {
+	case '1':
+		expectedType = domain.AccountTypeActivo
+	case '2':
+		expectedType = domain.AccountTypePasivo
+	case '3':
+		expectedType = domain.AccountTypePatrimonio
+	case '4':
+		expectedType = domain.AccountTypeIngreso
+	case '5':
+		expectedType = domain.AccountTypeGasto
+	case '6':
+		expectedType = domain.AccountTypeCosto
+	default:
+		return errors.New("código contable inválido: debe iniciar con un dígito de 1 a 6")
+	}
+
+	if account.Type != expectedType {
+		return fmt.Errorf("tipo de cuenta %s incongruente con el código contable que inicia con %c", account.Type, firstChar)
+	}
+
+	if account.ParentID != nil && *account.ParentID != "" {
+		parent, err := s.accountRepo.GetByID(ctx, *account.ParentID)
+		if err != nil || parent == nil {
+			return errors.New("cuenta padre no encontrada")
+		}
+		if parent.AcceptsMove {
+			if parent.CurrentBal != 0 {
+				return fmt.Errorf("no se puede convertir la cuenta padre %s en mayorizadora porque posee un saldo de %d centavos", parent.Code, parent.CurrentBal)
+			}
+			parent.AcceptsMove = false
+			_ = s.accountRepo.Update(ctx, parent)
+		}
+	}
+
+	return s.accountRepo.Create(ctx, account)
 }
 
 func (s *accountService) GetAccount(ctx context.Context, id string) (*domain.Account, error) {
-	// TODO: Implementar búsqueda por ID
-	return nil, nil
+	return s.accountRepo.GetByID(ctx, id)
 }
 
 func (s *accountService) GetAccountByCode(ctx context.Context, code string) (*domain.Account, error) {
-	// TODO: Implementar búsqueda por código contable
-	return nil, nil
+	return s.accountRepo.GetByCode(ctx, code)
 }
 
 func (s *accountService) ListAccounts(ctx context.Context) ([]*domain.Account, error) {
-	// TODO: Implementar listado
-	return nil, nil
+	return s.accountRepo.List(ctx, nil)
 }
 
 func (s *accountService) UpdateAccount(ctx context.Context, account *domain.Account) error {
-	// TODO: Implementar actualización
-	return nil
+	return s.accountRepo.Update(ctx, account)
 }
 
 func (s *accountService) DisableAccount(ctx context.Context, id string) error {
-	// TODO: Implementar desactivación
-	return nil
+	account, err := s.accountRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if account == nil {
+		return domain.ErrAccountNotFound
+	}
+
+	if account.CurrentBal != 0 {
+		return errors.New("no se puede desactivar una cuenta con saldo diferente de cero")
+	}
+
+	accounts, err := s.accountRepo.List(ctx, map[string]interface{}{"parent_id": id})
+	if err == nil {
+		for _, sub := range accounts {
+			if sub.Status == domain.AccountStatusActiva {
+				return errors.New("no se puede desactivar la cuenta porque tiene subcuentas activas")
+			}
+		}
+	}
+
+	account.Status = domain.AccountStatusInactiva
+	return s.accountRepo.Update(ctx, account)
 }
 `,
   },
@@ -546,8 +616,11 @@ func (s *accountService) DisableAccount(ctx context.Context, id string) error {
 
 import (
 	"context"
+	"time"
+
 	"github.com/klik/contable-fix/internal/domain"
 	"github.com/klik/contable-fix/internal/repository"
+	"github.com/klik/contable-fix/pkg/validator"
 )
 
 // JournalService define los casos de uso para asientos contables
@@ -559,10 +632,16 @@ type JournalService interface {
 	ListEntries(ctx context.Context, filter map[string]interface{}) ([]*domain.JournalEntry, error)
 }
 
+// UnitOfWork define el puerto para coordinar transacciones ACID.
+type UnitOfWork interface {
+	WithTransaction(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
 type journalService struct {
 	journalRepo repository.JournalRepository
 	accountRepo repository.AccountRepository
 	ledgerRepo  repository.LedgerRepository
+	uow         UnitOfWork
 }
 
 // NewJournalService crea una nueva instancia del servicio de asientos contables
@@ -570,40 +649,197 @@ func NewJournalService(
 	journalRepo repository.JournalRepository,
 	accountRepo repository.AccountRepository,
 	ledgerRepo repository.LedgerRepository,
+	uow UnitOfWork,
 ) JournalService {
 	return &journalService{
 		journalRepo: journalRepo,
 		accountRepo: accountRepo,
 		ledgerRepo:  ledgerRepo,
+		uow:         uow,
 	}
 }
 
 func (s *journalService) CreateDraft(ctx context.Context, entry *domain.JournalEntry) (*domain.JournalEntry, error) {
-	// TODO: Validar partida doble (débito == crédito)
-	// TODO: Validar cuentas activas y guardar borrador
-	return nil, nil
+	if len(entry.Lines) < 2 {
+		return nil, domain.ErrEmptyJournalLines
+	}
+
+	if !validator.ValidateDoubleEntry(entry.Lines) {
+		return nil, domain.ErrUnbalancedJournal
+	}
+
+	// Validar que cada cuenta exista, esté activa y acepte movimientos
+	for _, line := range entry.Lines {
+		account, err := s.accountRepo.GetByID(ctx, line.AccountID)
+		if err != nil || account == nil {
+			return nil, domain.ErrAccountNotFound
+		}
+		if account.Status != domain.AccountStatusActiva {
+			return nil, domain.ErrAccountInactive
+		}
+		if !account.AcceptsMove {
+			return nil, domain.ErrAccountHasChildren
+		}
+	}
+
+	entry.Status = domain.EntryStatusBorrador
+
+	var totalDebit, totalCredit int64
+	for _, line := range entry.Lines {
+		totalDebit += line.Debit
+		totalCredit += line.Credit
+	}
+	entry.TotalDebit = totalDebit
+	entry.TotalCredit = totalCredit
+	entry.CreatedAt = time.Now()
+	entry.UpdatedAt = time.Now()
+
+	err := s.journalRepo.Create(ctx, entry)
+	if err != nil {
+		return nil, err
+	}
+
+	return entry, nil
 }
 
 func (s *journalService) PostEntry(ctx context.Context, entryID string) error {
-	// TODO: Validar estado actual del asiento
-	// TODO: Asentar movimientos en el libro mayor y actualizar saldos
-	// TODO: Marcar asiento como CONTABILIZADO
-	return nil
+	entry, err := s.journalRepo.GetByID(ctx, entryID)
+	if err != nil {
+		return err
+	}
+	if entry == nil {
+		return domain.ErrAccountNotFound
+	}
+
+	if entry.Status != domain.EntryStatusBorrador {
+		return domain.ErrEntryAlreadyPosted
+	}
+
+	lines, err := s.journalRepo.GetLinesByEntryID(ctx, entryID)
+	if err != nil {
+		return err
+	}
+	if len(lines) == 0 {
+		lines = entry.Lines
+	}
+	if len(lines) < 2 {
+		return domain.ErrEmptyJournalLines
+	}
+
+	if !validator.ValidateDoubleEntry(lines) {
+		return domain.ErrUnbalancedJournal
+	}
+
+	return s.uow.WithTransaction(ctx, func(txCtx context.Context) error {
+		ledgerEntries := make([]domain.LedgerEntry, len(lines))
+		for i, line := range lines {
+			ledgerEntries[i] = domain.LedgerEntry{
+				AccountID:   line.AccountID,
+				AccountCode: line.AccountCode,
+				EntryDate:   entry.Date,
+				Debit:       line.Debit,
+				Credit:      line.Credit,
+				Reference:   entry.Number,
+			}
+		}
+
+		err = s.ledgerRepo.RecordMovements(txCtx, ledgerEntries)
+		if err != nil {
+			return err
+		}
+
+		for _, line := range lines {
+			account, err := s.accountRepo.GetByID(txCtx, line.AccountID)
+			if err != nil {
+				return err
+			}
+			var amount int64
+			switch account.Type {
+			case domain.AccountTypeActivo, domain.AccountTypeGasto, domain.AccountTypeCosto:
+				amount = line.Debit - line.Credit
+			case domain.AccountTypePasivo, domain.AccountTypePatrimonio, domain.AccountTypeIngreso:
+				amount = line.Credit - line.Debit
+			default:
+				amount = line.Debit - line.Credit
+			}
+			err = s.accountRepo.UpdateBalance(txCtx, line.AccountID, amount)
+			if err != nil {
+				return err
+			}
+		}
+
+		return s.journalRepo.UpdateStatus(txCtx, entryID, domain.EntryStatusContabilizado)
+	})
 }
 
 func (s *journalService) ReverseEntry(ctx context.Context, entryID string, reason string) (*domain.JournalEntry, error) {
-	// TODO: Generar asiento espejo invertido para reversión
-	return nil, nil
+	original, err := s.journalRepo.GetByID(ctx, entryID)
+	if err != nil {
+		return nil, err
+	}
+	if original == nil {
+		return nil, domain.ErrAccountNotFound
+	}
+
+	originalLines, err := s.journalRepo.GetLinesByEntryID(ctx, entryID)
+	if err != nil {
+		return nil, err
+	}
+	if len(originalLines) == 0 {
+		originalLines = original.Lines
+	}
+
+	reversedLines := make([]domain.JournalLine, len(originalLines))
+	for i, line := range originalLines {
+		reversedLines[i] = domain.JournalLine{
+			AccountID:    line.AccountID,
+			AccountCode:  line.AccountCode,
+			Description:  "Reversión: " + line.Description,
+			Debit:        line.Credit,
+			Credit:       line.Debit,
+			ThirdPartyID: line.ThirdPartyID,
+		}
+	}
+
+	reversedEntry := &domain.JournalEntry{
+		Number:      "REV-" + original.Number,
+		Date:        time.Now(),
+		Concept:     "Reversión de " + original.Number + " - Motivo: " + reason,
+		Reference:   original.Number,
+		Status:      domain.EntryStatusBorrador,
+		Lines:       reversedLines,
+		TotalDebit:  original.TotalCredit,
+		TotalCredit: original.TotalDebit,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+
+	err = s.journalRepo.Create(ctx, reversedEntry)
+	if err != nil {
+		return nil, err
+	}
+
+	return reversedEntry, nil
 }
 
 func (s *journalService) GetEntry(ctx context.Context, id string) (*domain.JournalEntry, error) {
-	// TODO: Consultar asiento con sus líneas
-	return nil, nil
+	entry, err := s.journalRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if entry == nil {
+		return nil, nil
+	}
+	lines, err := s.journalRepo.GetLinesByEntryID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	entry.Lines = lines
+	return entry, nil
 }
 
 func (s *journalService) ListEntries(ctx context.Context, filter map[string]interface{}) ([]*domain.JournalEntry, error) {
-	// TODO: Listar asientos filtrados
-	return nil, nil
+	return s.journalRepo.List(ctx, filter)
 }
 `,
   },
@@ -801,19 +1037,17 @@ func Error(w http.ResponseWriter, status int, message string) {
     code: `package validator
 
 import (
-	"math"
 	"github.com/klik/contable-fix/internal/domain"
 )
 
-// ValidateDoubleEntry valida matemáticamente la partida doble (Débitos == Créditos)
+// ValidateDoubleEntry valida matemáticamente la partida doble (Débitos == Créditos) usando enteros exactos
 func ValidateDoubleEntry(lines []domain.JournalLine) bool {
-	var totalDebit, totalCredit float64
+	var totalDebit, totalCredit int64
 	for _, line := range lines {
 		totalDebit += line.Debit
 		totalCredit += line.Credit
 	}
-	// Margen de tolerancia para punto flotante
-	return math.Abs(totalDebit-totalCredit) < 0.0001
+	return totalDebit == totalCredit
 }
 `,
   },
@@ -907,44 +1141,3 @@ contable-fix/
 `,
   },
   {
-    path: 'AUDIT_GUIDE.md',
-    name: 'AUDIT_GUIDE.md',
-    layer: 'root',
-    layerLabel: 'Guía de Auditoría',
-    description: 'Directrices técnicas y criterios de aceptación del auditor.',
-    code: `# DICTAMEN DE AUDITORÍA Y GUÍA TÉCNICA
-## Proyecto: Contable Fix by KLIK
-**Rol:** Auditor Técnico & Arquitecto de Software
-**Destinatario:** Equipo de Desarrollo Backend en Go
-
----
-
-### 1. REGLAS CONTABLES NO NEGOCIABLES (INVARIANTES DEL SISTEMA)
-
-1. **Invariante de Partida Doble:**
-   - Para todo comprobante o asiento contable (\`JournalEntry\`), la suma total de débitos DEBE ser idéntica a la suma total de créditos (\`∑ Débitos == ∑ Créditos\`).
-   - El sistema debe rechazar cualquier intento de contabilizar un asiento desbalanceado con \`ErrUnbalancedJournal\`.
-
-2. **Inmutabilidad de Asientos Contabilizados:**
-   - Una vez que un asiento pasa al estado \`CONTABILIZADO\`, está terminantemente **PROHIBIDO** ejecutar sentencias \`UPDATE\` o \`DELETE\` sobre el asiento o sus líneas.
-   - Si se requiere corregir un error, se debe generar un asiento de reversión/anulación con contrapartida (\`ReverseEntry()\`), dejando trazabilidad del motivo y referencia al asiento original.
-
-3. **Restricción de Cuentas Auxiliares:**
-   - Las transacciones en las líneas del asiento (\`JournalLine\`) solo pueden asociarse a cuentas auxiliares que tengan \`accepts_move = true\`.
-   - Queda prohibido imputar movimientos a cuentas de nivel superior o mayorizadoras.
-
-4. **Precisión Numérica y Manejo Monetario:**
-   - Evitar \`float64\` para saldos acumulados en producción debido a errores de redondeo de punto flotante de IEEE 754.
-   - Recomendación: Utilizar la librería \`github.com/shopspring/decimal\` o enteros de centavos (\`int64\`), mapeados a columnas \`NUMERIC(18, 4)\` en PostgreSQL.
-
----
-
-### 2. HOJA DE RUTA DE IMPLEMENTACIÓN EN 4 FASES
-
-- **FASE 1: Capa de Persistencia y Transaccionalidad** (PostgreSQL / \`*sql.Tx\`)
-- **FASE 2: Lógica del Plan de Cuentas** (\`account_service.go\`)
-- **FASE 3: Motor de Asientos y Libro Mayor** (\`journal_service.go\` y \`ledger_service.go\`)
-- **FASE 4: Capa de Entrega HTTP, Seguridad y Tests** (\`handler/http\` y \`*_test.go\`)
-`,
-  },
-];

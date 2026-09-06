@@ -1,45 +1,33 @@
 package config
 
+import (
+	"os"
+)
+
 type Config struct {
-	App      AppConfig
-	Database DatabaseConfig
-	Server   ServerConfig
+	Environment    string
+	DatabaseDriver string
+	DatabaseURL    string
+	NodeID         string
 }
 
-type AppConfig struct {
-	Name        string
-	Environment string
-	Version     string
-}
+func LoadFromEnv() *Config {
+	driver := getEnv("DB_DRIVER", "sqlite")
+	dbURL := getEnv("DATABASE_URL", ":memory:")
+	nodeID := getEnv("NODE_ID", "node-local-01")
+	env := getEnv("APP_ENV", "development")
 
-type DatabaseConfig struct {
-	Driver string
-	Host   string
-	Port   int
-	User   string
-	Pass   string
-	Name   string
-	SSL    bool
-}
-
-type ServerConfig struct {
-	Port         int
-	ReadTimeout  int
-	WriteTimeout int
-}
-
-func LoadConfig() (*Config, error) {
-	// TODO: Cargar variables de entorno / archivo config
 	return &Config{
-		App: AppConfig{
-			Name:        "Contable Fix by KLIK",
-			Environment: "development",
-			Version:     "1.0.0",
-		},
-		Server: ServerConfig{
-			Port:         8080,
-			ReadTimeout:  15,
-			WriteTimeout: 15,
-		},
-	}, nil
+		Environment:    env,
+		DatabaseDriver: driver,
+		DatabaseURL:    dbURL,
+		NodeID:         nodeID,
+	}
+}
+
+func getEnv(key, defaultValue string) string {
+	if val, ok := os.LookupEnv(key); ok && val != "" {
+		return val
+	}
+	return defaultValue
 }

@@ -24,7 +24,7 @@ func main() {
 
 	// 3. Inicializar servicios de casos de uso
 	accountSvc := service.NewAccountService(nil)
-	journalSvc := service.NewJournalService(nil, nil, nil)
+	journalSvc := service.NewJournalService(nil, nil, nil, nil)
 
 	// 4. Inicializar handlers HTTP
 	accountHandler := deliveryHttp.NewAccountHandler(accountSvc)

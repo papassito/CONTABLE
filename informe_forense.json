@@ -1,0 +1,58 @@
+﻿{
+    "evidencia_archivos":  [
+                               {
+                                   "tamaño_bytes":  907,
+                                   "creacion_utc":  "2022-05-07T05:24:58Z",
+                                   "sha256":  "B78800996089EAB544F838A14405A8504D9466005A177730331AF6D209318FA4",
+                                   "ultima_modificacion_utc":  "2026-08-27T19:22:37Z",
+                                   "ruta":  "C:\\Windows\\System32\\drivers\\etc\\hosts",
+                                   "ultimo_acceso_utc":  "2026-09-06T15:57:03Z"
+                               },
+                               {
+                                   "tamaño_bytes":  439,
+                                   "creacion_utc":  "2026-05-28T06:23:06Z",
+                                   "sha256":  "EC80311A1ED7FB7CB5AF9A602AD3D7C43ECAE2B3151FB008920BF7AF982CD9E5",
+                                   "ultima_modificacion_utc":  "2026-05-29T06:48:05Z",
+                                   "ruta":  "C:\\Windows\\System32\\drivers\\etc\\hosts.ics",
+                                   "ultimo_acceso_utc":  "2026-09-06T07:35:08Z"
+                               },
+                               {
+                                   "tamaño_bytes":  3683,
+                                   "creacion_utc":  "2024-04-01T07:26:16Z",
+                                   "sha256":  "000FE9C924B4D155477CAD15B4CFD30616C37523B4B848D6ECBD003507A55EDF",
+                                   "ultima_modificacion_utc":  "2024-04-01T07:24:05Z",
+                                   "ruta":  "C:\\Windows\\System32\\drivers\\etc\\lmhosts.sam",
+                                   "ultimo_acceso_utc":  "2024-04-01T07:24:05Z"
+                               },
+                               {
+                                   "tamaño_bytes":  407,
+                                   "creacion_utc":  "2022-05-07T05:24:58Z",
+                                   "sha256":  "21DE93ED8293DBB9C53B59A5C1AF04B1FD997CF7DFBD0BA5F21CB315D845B7A8",
+                                   "ultima_modificacion_utc":  "2022-05-07T05:22:33Z",
+                                   "ruta":  "C:\\Windows\\System32\\drivers\\etc\\networks",
+                                   "ultimo_acceso_utc":  "2026-09-06T09:31:21Z"
+                               },
+                               {
+                                   "tamaño_bytes":  1358,
+                                   "creacion_utc":  "2022-05-07T05:24:58Z",
+                                   "sha256":  "52CF86496F3859D0F3E58776ECCFF1D6589792004D2291D3B0CE8D7635BE7278",
+                                   "ultima_modificacion_utc":  "2022-05-07T05:22:33Z",
+                                   "ruta":  "C:\\Windows\\System32\\drivers\\etc\\protocol",
+                                   "ultimo_acceso_utc":  "2026-09-06T09:31:21Z"
+                               },
+                               {
+                                   "tamaño_bytes":  17635,
+                                   "creacion_utc":  "2022-05-07T05:24:58Z",
+                                   "sha256":  "C1723F7F29B224C42F26452C3EFA8F80F6EE8500EE78513E0C0732BA55399F7D",
+                                   "ultima_modificacion_utc":  "2022-05-07T05:22:33Z",
+                                   "ruta":  "C:\\Windows\\System32\\drivers\\etc\\services",
+                                   "ultimo_acceso_utc":  "2026-09-06T16:01:13Z"
+                               }
+                           ],
+    "encabezado_auditoria":  {
+                                 "fecha_ejecucion_utc":  "2026-09-06T16:30:28Z",
+                                 "sistema_operativo":  "Microsoft Windows 11 Pro",
+                                 "arquitectura":  "64 bits",
+                                 "nombre_equipo":  "CMSOLUCIONES"
+                             }
+}
