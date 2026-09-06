@@ -11,7 +11,7 @@ import (
 
 // UnitOfWork define el puerto para coordinar transacciones ACID.
 type UnitOfWork interface {
-	WithTransaction(ctx context.Context, fn func(ctx context.Context) error) error
+	Execute(ctx context.Context, fn func(ctx context.Context) error) error
 }
 
 type JournalService interface {
@@ -114,7 +114,7 @@ func (s *journalService) PostEntry(ctx context.Context, entryID string) error {
 		return domain.ErrUnbalancedJournal
 	}
 
-	return s.uow.WithTransaction(ctx, func(txCtx context.Context) error {
+	return s.uow.Execute(ctx, func(txCtx context.Context) error {
 		ledgerEntries := make([]domain.LedgerEntry, len(lines))
 		for i, line := range lines {
 			ledgerEntries[i] = domain.LedgerEntry{
