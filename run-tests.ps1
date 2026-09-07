@@ -62,36 +62,37 @@ function Invoke-ContableTests {
             $finalTestArgs += "-coverprofile=$coverFile"
         }
 
-        # Limpieza de reportes previos
-        if (Test-Path $coverFile) { Remove-Item $coverFile -Force }
-        if (Test-Path "coverage.html") { Remove-Item "coverage.html" -Force }
+        # Limpiar cualquier reporte anterior
+        if (Test-Path $coverFile) { Remove-Item $coverFile -Force -ErrorAction SilentlyContinue }
+        if (Test-Path "coverage.html") { Remove-Item "coverage.html" -Force -ErrorAction SilentlyContinue }
 
         Write-Host "🏃 Ejecutando suites de pruebas..." -ForegroundColor Yellow
         
         # 3. Ejecución de pruebas
-        go test -v $finalTestArgs ./...
+        go test -v $finalTestArgs ./... 
         $testExitCode = $LASTEXITCODE
 
-        # 4. Generar reporte HTML si existe el archivo de cobertura
-        if (Test-Path $coverFile) {
+        # 4. Generar reporte HTML SOLO si go test logró crear el archivo de cobertura
+        if (Test-Path -Path $coverFile) {
             Write-Host "`n📊 Compilando reporte de cobertura HTML..." -ForegroundColor Cyan
-            go tool cover -html=$coverFile -o coverage.html
+            go tool cover "-html=$coverFile" -o coverage.html
             
-            # Abrir automáticamente solo en sesión interactiva y si no estamos en CI
-            if ([Environment]::UserInteractive -and -not $env:CI) {
+            if ($LASTEXITCODE -eq 0 -and [Environment]::UserInteractive -and -not $env:CI) {
                 Start-Process "coverage.html"
             }
+        } else {
+            Write-Host "`n⚠️ No se pudo generar el reporte porque no se encontró '$coverFile' (¿Las pruebas fallaron antes de ejecutarse?)." -ForegroundColor Yellow
         }
 
         # 5. Evaluación de resultado final
         if ($testExitCode -ne 0) {
-            Write-Host "`n⚠️ Las pruebas finalizaron con errores, pero el reporte fue generado." -ForegroundColor Red
+            Write-Host "`n❌ Las pruebas finalizaron con errores." -ForegroundColor Red
         } else {
             Write-Host "`n✅ ¡Todas las pruebas finalizaron en verde!" -ForegroundColor Green
         }
     }
     catch {
-        Write-Host "`n❌ Error crítico de ejecución: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "`n❌ Error crítico de ejecución: $($_.Exception.Message)" -ForegroundColor Red 
         $testExitCode = 1
     }
     finally {
