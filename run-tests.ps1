@@ -1,27 +1,21 @@
 <#
 .SYNOPSIS
-    Script de automatización para la ejecución de pruebas contables en Go y generación de reportes de cobertura.
-.DESCRIPTION
-    Busca automáticamente el módulo de Go (en la carpeta actual o subcarpetas conocidas),
-    ejecuta 'go test' en su contexto y compila/abre el reporte gráfico en formato HTML
-    si se genera el perfil de cobertura.
+    Script de automatización para pruebas en Go y generación de reportes de cobertura.
 #>
 
 function Invoke-ContableTests {
     [CmdletBinding()]
     param(
-        # Permite recibir cualquier argumento adicional de la consola (-race, -coverprofile, etc.)
         [Parameter(ValueFromRemainingArguments = $true)]
         [string[]]$TestArgs
     )
 
-    # 1. Definir la raíz del script con respaldo para ejecución interactiva
     $scriptRoot = $PSScriptRoot
-    if ([string]::IsNullOrWhiteSpace($scriptRoot)) {
-        $scriptRoot = (Get-Location).Path
+    if ([string]::IsNullOrWhiteSpace($scriptRoot)) { 
+        $scriptRoot = (Get-Location).Path 
     }
 
-    # 2. Buscar el directorio del proyecto Go automáticamente
+    # 1. Búsqueda inteligente del módulo
     $possiblePaths = @(".", "go-skeleton", "go-contable", "contable-go", "GO-contable", "contable_go", "CONTABLE\go-skeleton")
     $projectDir = $null
 
@@ -33,62 +27,85 @@ function Invoke-ContableTests {
         }
     }
 
-    # Si no se encuentra el archivo go.mod, se informa sin cerrar la terminal
     if (-not $projectDir) {
-        Write-Host "❌ Error: No se encontró un módulo de Go válido con 'go.mod' en '$scriptRoot'." -ForegroundColor Red
-        $global:LASTEXITCODE = 1
-        return
+        Write-Host "❌ Error: No se encontró 'go.mod' en '$scriptRoot' o sus subcarpetas." -ForegroundColor Red
+        return 1
     }
 
-    Write-Host "🚀 Proyecto contable localizado en: $projectDir" -ForegroundColor Green
+    Write-Host "🚀 Proyecto localizado en: $projectDir" -ForegroundColor Green
     
-    # Cambiar temporalmente la ubicación a la carpeta del proyecto de Go
-    Push-Location -Path $projectDir
+    # Control explicito de la pila de directorios
+    $pushedDir = $false
+    $testExitCode = 1
 
     try {
-        # 3. Sincronizar dependencias y limpiar archivos de cobertura previos
-        Write-Host "`n🔄 Sincronizando dependencias con 'go mod tidy'..." -ForegroundColor Yellow
+        Push-Location -Path $projectDir
+        $pushedDir = $true
+
+        Write-Host "`n🔄 Sincronizando dependencias..." -ForegroundColor Yellow
         go mod tidy
-        if (Test-Path "coverage.out") { Remove-Item "coverage.out" -Force }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "⚠️ Advertencia: 'go mod tidy' finalizó con errores." -ForegroundColor Red
+        }
+
+        # 2. Resolución dinámica del archivo de cobertura
+        $coverFile = "coverage.out"
+        $finalTestArgs = @()
+        if ($TestArgs) { $finalTestArgs += $TestArgs }
+
+        # Búsqueda segura del argumento -coverprofile
+        $customCoverArg = $finalTestArgs | Where-Object { $_ -like "-coverprofile=*" } | Select-Object -First 1
+
+        if ($customCoverArg) {
+            $coverFile = ($customCoverArg -split "=", 2)[1].Trim('"''')
+        } else {
+            $finalTestArgs += "-coverprofile=$coverFile"
+        }
+
+        # Limpieza de reportes previos
+        if (Test-Path $coverFile) { Remove-Item $coverFile -Force }
         if (Test-Path "coverage.html") { Remove-Item "coverage.html" -Force }
 
-        # 4. Ejecución de la suite de pruebas en Go
-        Write-Host "🏃 Ejecutando suites de pruebas contables..." -ForegroundColor Yellow
+        Write-Host "🏃 Ejecutando suites de pruebas..." -ForegroundColor Yellow
         
-        # Mejora: Añadir automáticamente el perfil de cobertura si no se especifica uno.
-        $finalTestArgs = $TestArgs
-        if (-not ($TestArgs -like "*-coverprofile*")) {
-            $finalTestArgs += "-coverprofile=coverage.out"
+        # 3. Ejecución de pruebas
+        go test -v $finalTestArgs ./...
+        $testExitCode = $LASTEXITCODE
+
+        # 4. Generar reporte HTML si existe el archivo de cobertura
+        if (Test-Path $coverFile) {
+            Write-Host "`n📊 Compilando reporte de cobertura HTML..." -ForegroundColor Cyan
+            go tool cover -html=$coverFile -o coverage.html
+            
+            # Abrir automáticamente solo en sesión interactiva y si no estamos en CI
+            if ([Environment]::UserInteractive -and -not $env:CI) {
+                Start-Process "coverage.html"
+            }
         }
 
-        go test -v ./... @finalTestArgs
-        
-        # 5. Verificación del código de retorno de 'go test'
-        if ($LASTEXITCODE -ne 0) {
-            throw "La ejecución de 'go test' falló con código de salida: $LASTEXITCODE"
+        # 5. Evaluación de resultado final
+        if ($testExitCode -ne 0) {
+            Write-Host "`n⚠️ Las pruebas finalizaron con errores, pero el reporte fue generado." -ForegroundColor Red
+        } else {
+            Write-Host "`n✅ ¡Todas las pruebas finalizaron en verde!" -ForegroundColor Green
         }
-
-        # 6. Generación y apertura automática del reporte HTML si existe archivo de cobertura
-        if (Test-Path "coverage.out") {
-            Write-Host "`n📊 Detectado 'coverage.out'. Compilando y abriendo reporte de cobertura HTML..." -ForegroundColor Cyan
-            go tool cover -html=coverage.out -o coverage.html
-            Start-Process "coverage.html" # Abre el reporte en el navegador predeterminado
-        }
-
-        Write-Host "`n✅ ¡Todas las pruebas contables han finalizado en verde!" -ForegroundColor Green
-        $global:LASTEXITCODE = 0
     }
     catch {
-        # Captura y despliegue del error en consola de manera segura
-        Write-Host "`n❌ Ocurrió un error durante la ejecución de las pruebas:" -ForegroundColor Red
-        Write-Host $_.Exception.Message -ForegroundColor Red
-        $global:LASTEXITCODE = 1
+        Write-Host "`n❌ Error crítico de ejecución: $($_.Exception.Message)" -ForegroundColor Red
+        $testExitCode = 1
     }
     finally {
-        # Regresar siempre al directorio original de la consola
-        Pop-Location
+        # Solo restaura la ubicación si Push-Location llegó a ejecutarse
+        if ($pushedDir) {
+            Pop-Location
+        }
     }
+
+    return $testExitCode
 }
 
-# Ejecución automática de la función pasando todos los argumentos recibidos por consola
-Invoke-ContableTests @args
+# Invocación directa y propagación del exit code
+$exitCode = Invoke-ContableTests @args
+if ($exitCode -ne 0) {
+    exit $exitCode
+}
