@@ -1,50 +1,46 @@
 package main
 
 import (
-	"fmt"
+	"database/sql"
 	"log"
 	"net/http"
 
-	"github.com/klik/fcos-kernel/config"
-	deliveryHttp "github.com/klik/fcos-kernel/internal/handler/http"
+	httphandler "github.com/klik/fcos-kernel/internal/handler/http"
+	"github.com/klik/fcos-kernel/internal/repository"
 	"github.com/klik/fcos-kernel/internal/service"
+	"github.com/klik/fcos-kernel/pkg/database"
+	_ "modernc.org/sqlite"
 )
 
 func main() {
-	fmt.Println("Iniciando Contable Fix by KLIK...")
-
-	// 1. Cargar configuración base
-	cfg, err := config.LoadConfig()
+	// 1. Initialize SQLite database with WAL (Write-Ahead Logging) mode
+	db, err := sql.Open("sqlite", "file:fcos_local.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 	if err != nil {
-		log.Fatalf("Error al cargar configuración: %v", err)
+		log.Fatalf("Critical failure connecting to SQLite database: %v", err)
 	}
+	defer db.Close()
 
-	// 2. Inicializar repositorios (implementaciones de persistencia)
-	// TODO: Inyectar repositorios reales (Postgres, MySQL o In-Memory)
+	// 2. Instantiate Concrete Persistence Repositories
+	accountRepo := repository.NewAccountRepository(db)
+	journalRepo := repository.NewJournalRepository(db)
+	ledgerRepo := repository.NewLedgerRepository(db)
+	uow := database.NewUnitOfWork(db)
 
-	// 3. Inicializar servicios de casos de uso
-	accountSvc := service.NewAccountService(nil)
-	journalSvc := service.NewJournalService(nil, nil, nil, nil, nil)
+	// 3. Inject real dependencies into Application Services
+	auditService := service.NewLoggingAuditService()
+	accountSvc := service.NewAccountService(accountRepo)
+	journalSvc := service.NewJournalService(journalRepo, accountRepo, ledgerRepo, uow, auditService)
 
-	// 4. Inicializar handlers HTTP
-	accountHandler := deliveryHttp.NewAccountHandler(accountSvc)
-	journalHandler := deliveryHttp.NewJournalHandler(journalSvc)
+	// 4. Configure API Router and Handlers
+	router := httphandler.NewRouter(accountSvc, journalSvc)
+	archHandler := httphandler.NewArchitectureHandler("./")
 
-	// 5. Configurar router
-	router := deliveryHttp.NewRouter(deliveryHttp.RouterConfig{
-		AccountHandler: accountHandler,
-		JournalHandler: journalHandler,
-	})
+	// Endpoint for dynamic inspection from the frontend
+	http.HandleFunc("/api/v1/architecture/files", archHandler.GetFileTree)
+	http.Handle("/", router)
 
-	// 6. Arrancar servidor HTTP
-	port := cfg.Server.Port
-	if port == 0 {
-		port = 8080
-	}
-	addr := fmt.Sprintf(":%d", port)
-	log.Printf("Servidor Contable Fix escuchando en %s", addr)
-
-	if err := http.ListenAndServe(addr, router); err != nil {
-		log.Fatalf("Fallo en el servidor HTTP: %v", err)
+	log.Println("🚀 FCOS v2.2 Kernel started successfully on http://localhost:8080")
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		log.Fatalf("Critical error in HTTP server: %v", err)
 	}
 }

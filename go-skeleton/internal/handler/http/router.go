@@ -2,26 +2,28 @@ package http
 
 import (
 	"net/http"
+
+	"github.com/klik/fcos-kernel/internal/service"
 )
 
-type RouterConfig struct {
-	AccountHandler *AccountHandler
-	JournalHandler *JournalHandler
-}
-
-func NewRouter(cfg RouterConfig) http.Handler {
+// NewRouter creates the HTTP router and connects handlers with their services.
+func NewRouter(accountSvc service.AccountService, journalSvc service.JournalService) http.Handler {
 	mux := http.NewServeMux()
 
-	// Plan de cuentas contable
-	mux.HandleFunc("POST /api/v1/accounts", cfg.AccountHandler.Create)
-	mux.HandleFunc("GET /api/v1/accounts", cfg.AccountHandler.List)
-	mux.HandleFunc("GET /api/v1/accounts/{id}", cfg.AccountHandler.GetByID)
+	// Create handlers with their injected services
+	accountHandler := NewAccountHandler(accountSvc)
+	journalHandler := NewJournalHandler(journalSvc)
 
-	// Asientos y comprobantes contables
-	mux.HandleFunc("POST /api/v1/journal-entries", cfg.JournalHandler.CreateDraft)
-	mux.HandleFunc("POST /api/v1/journal-entries/{id}/post", cfg.JournalHandler.Post)
-	mux.HandleFunc("POST /api/v1/journal-entries/{id}/reverse", cfg.JournalHandler.Reverse)
-	mux.HandleFunc("GET /api/v1/journal-entries/{id}", cfg.JournalHandler.GetByID)
+	// Chart of Accounts
+	mux.HandleFunc("POST /api/v1/accounts", accountHandler.Create)
+	mux.HandleFunc("GET /api/v1/accounts", accountHandler.List)
+	mux.HandleFunc("GET /api/v1/accounts/{id}", accountHandler.GetByID)
+
+	// Journal Entries
+	mux.HandleFunc("POST /api/v1/journal-entries", journalHandler.CreateDraft)
+	mux.HandleFunc("POST /api/v1/journal-entries/{id}/post", journalHandler.Post)
+	mux.HandleFunc("POST /api/v1/journal-entries/{id}/reverse", journalHandler.Reverse)
+	mux.HandleFunc("GET /api/v1/journal-entries/{id}", journalHandler.GetByID)
 
 	return mux
 }

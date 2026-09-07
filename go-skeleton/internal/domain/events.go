@@ -24,9 +24,12 @@ type ExpedienteCreadoEvent struct {
 	TimestampUTC    time.Time `json:"timestamp_utc"`
 }
 
-func (e ExpedienteCreadoEvent) EventID() string       { return e.ID }
-func (e ExpedienteCreadoEvent) TenantID() string      { return e.TenantUUID }
-func (e ExpedienteCreadoEvent) EventType() string     { return "ExpedienteCreado" }
+func (e ExpedienteCreadoEvent) EventID() string { return e.ID }
+
+func (e ExpedienteCreadoEvent) TenantID() string { return e.TenantUUID }
+
+func (e ExpedienteCreadoEvent) EventType() string { return "ExpedienteCreado" }
+
 func (e ExpedienteCreadoEvent) OccurredAt() time.Time { return e.TimestampUTC }
 
 // Evento: CalculoEjecutado
@@ -42,9 +45,12 @@ type CalculoEjecutadoEvent struct {
 	TimestampUTC          time.Time `json:"timestamp_utc"`
 }
 
-func (e CalculoEjecutadoEvent) EventID() string       { return e.ID }
-func (e CalculoEjecutadoEvent) TenantID() string      { return e.TenantUUID }
-func (e CalculoEjecutadoEvent) EventType() string     { return "CalculoEjecutado" }
+func (e CalculoEjecutadoEvent) EventID() string { return e.ID }
+
+func (e CalculoEjecutadoEvent) TenantID() string { return e.TenantUUID }
+
+func (e CalculoEjecutadoEvent) EventType() string { return "CalculoEjecutado" }
+
 func (e CalculoEjecutadoEvent) OccurredAt() time.Time { return e.TimestampUTC }
 
 // Evento: IntervencionHumanaRequerida
@@ -59,7 +65,10 @@ type IntervencionHumanaRequeridaEvent struct {
 	TimestampUTC   time.Time `json:"timestamp_utc"`
 }
 
-func (e IntervencionHumanaRequeridaEvent) EventID() string       { return e.ID }
-func (e IntervencionHumanaRequeridaEvent) TenantID() string      { return e.TenantUUID }
-func (e IntervencionHumanaRequeridaEvent) EventType() string     { return "IntervencionHumanaRequerida" }
+func (e IntervencionHumanaRequeridaEvent) EventID() string { return e.ID }
+
+func (e IntervencionHumanaRequeridaEvent) TenantID() string { return e.TenantUUID }
+
+func (e IntervencionHumanaRequeridaEvent) EventType() string { return "IntervencionHumanaRequerida" }
+
 func (e IntervencionHumanaRequeridaEvent) OccurredAt() time.Time { return e.TimestampUTC }

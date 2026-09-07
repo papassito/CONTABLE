@@ -1,4 +1,4 @@
-package integration_test
+package fcos_kernel_test
 
 import (
 	"context"
@@ -61,8 +61,8 @@ func TestHighConcurrencyACIDAndTenantIsolation(t *testing.T) {
 					_, execErr := tx.ExecContext(txCtx, `
 						UPDATE tenant_balances 
 						SET total_calculated_cents = total_calculated_cents + ? 
-						WHERE tenant_id = ?;
-					`, amountPerCalc, tID)
+						WHERE tenant_id = ?;`,
+						amountPerCalc, tID)
 
 					return execErr
 				})

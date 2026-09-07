@@ -18,10 +18,16 @@ jobs:
         with:
           go-version: '1.22'
 
-      - name: Configurar Node.js & pnpm
+      - name: Configurar pnpm
         uses: pnpm/action-setup@v3
         with:
           version: 9
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
 
       - name: Instalar CLI de Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
@@ -39,8 +45,11 @@ jobs:
         run: |
           if ("$env:CERT_BASE64" -ne "") {
             $certPath = "$env:TEMP\cert.pfx"
-            [System.Convert]::FromBase64String($env:CERT_BASE64) | Set-Content -Path $certPath -Encoding Byte
-            & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f $certPath /p $env:CERT_PASS /tr http://timestamp.digicert.com /td sha256 /fd sha256 "build\bin\ContableFixByKlik.exe"
+            $certBytes = [System.Convert]::FromBase64String($env:CERT_BASE64)
+            [System.IO.File]::WriteAllBytes($certPath, $certBytes)
+            $signtool = (Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits" -Filter "signtool.exe" -Recurse -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+            if (-not $signtool) { $signtool = "signtool.exe" }
+            & $signtool sign /f $certPath /p $env:CERT_PASS /tr http://timestamp.digicert.com /td sha256 /fd sha256 "build\bin\ContableFixByKlik.exe"
             Remove-Item $certPath
           } else {
             Write-Host "Certificado EV no configurado en GitHub Secrets. Generando release sin firma."

@@ -1,4 +1,4 @@
-package integration_test
+package fcos_kernel_test
 
 import (
 	"context"

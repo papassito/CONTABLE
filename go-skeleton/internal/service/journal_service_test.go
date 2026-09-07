@@ -323,3 +323,98 @@ func TestPostEntry_RollbackOnBalanceUpdateError(t *testing.T) {
 		t.Error("Se esperaba que la transacción hiciera rollback por error de balance")
 	}
 }
+
+func TestPostEntry_Success(t *testing.T) {
+	jRepo := &mockJournalRepo{entries: make(map[string]*domain.JournalEntry), lines: make(map[string][]domain.JournalLine)}
+	aRepo := &mockAccountRepo{accounts: make(map[string]*domain.Account)}
+	lRepo := &mockLedgerRepo{}
+	uow := &mockUOW{}
+	audit := &mockAuditService{}
+
+	entry := &domain.JournalEntry{
+		ID:     "entry-1",
+		Number: "001",
+		Date:   time.Now(),
+		Status: domain.EntryStatusBorrador,
+		Lines: []domain.JournalLine{
+			{AccountID: "1", AccountCode: "110505", Debit: 1000, Credit: 0},
+			{AccountID: "2", AccountCode: "210505", Debit: 0, Credit: 1000},
+		},
+	}
+	jRepo.entries["entry-1"] = entry
+
+	// Configurar cuentas auxiliares activas
+	aRepo.accounts["1"] = &domain.Account{ID: "1", Code: "110505", Type: domain.AccountTypeActivo, Status: domain.AccountStatusActiva, AcceptsMove: true}
+	aRepo.accounts["2"] = &domain.Account{ID: "2", Code: "210505", Type: domain.AccountTypePasivo, Status: domain.AccountStatusActiva, AcceptsMove: true}
+
+	svc := service.NewJournalService(jRepo, aRepo, lRepo, uow, audit)
+
+	err := svc.PostEntry(context.Background(), "entry-1")
+	if err != nil {
+		t.Fatalf("Error inesperado en PostEntry: %v", err)
+	}
+
+	if entry.Status != domain.EntryStatusContabilizado {
+		t.Errorf("Se esperaba estado CONTABILIZADO, obtenido %s", entry.Status)
+	}
+
+	if aRepo.accounts["1"].CurrentBal != 1000 {
+		t.Errorf("Se esperaba balance 1000 para cuenta 1, obtenido %d", aRepo.accounts["1"].CurrentBal)
+	}
+	if aRepo.accounts["2"].CurrentBal != 1000 {
+		t.Errorf("Se esperaba balance 1000 para cuenta 2, obtenido %d", aRepo.accounts["2"].CurrentBal)
+	}
+
+	if len(lRepo.entries) != 2 {
+		t.Errorf("Se esperaban 2 entradas de libro mayor, obtenido %d", len(lRepo.entries))
+	}
+
+	if len(audit.events) != 1 {
+		t.Errorf("Se esperaba 1 evento de auditoría, obtenido %d", len(audit.events))
+	}
+}
+
+func TestReverseEntry_Success(t *testing.T) {
+	jRepo := &mockJournalRepo{entries: make(map[string]*domain.JournalEntry), lines: make(map[string][]domain.JournalLine)}
+	aRepo := &mockAccountRepo{accounts: make(map[string]*domain.Account)}
+	lRepo := &mockLedgerRepo{}
+	uow := &mockUOW{}
+	audit := &mockAuditService{}
+
+	entry := &domain.JournalEntry{
+		ID:     "entry-1",
+		Number: "001",
+		Status: domain.EntryStatusContabilizado,
+		Lines: []domain.JournalLine{
+			{AccountID: "1", AccountCode: "110505", Debit: 1000, Credit: 0, Description: "Debito original"},
+			{AccountID: "2", AccountCode: "210505", Debit: 0, Credit: 1000, Description: "Credito original"},
+		},
+	}
+	jRepo.entries["entry-1"] = entry
+
+	svc := service.NewJournalService(jRepo, aRepo, lRepo, uow, audit)
+
+	rev, err := svc.ReverseEntry(context.Background(), "entry-1", "Error de digitacion")
+	if err != nil {
+		t.Fatalf("Error inesperado en ReverseEntry: %v", err)
+	}
+
+	if rev.Number != "REV-001" {
+		t.Errorf("Se esperaba número REV-001, obtenido %s", rev.Number)
+	}
+
+	if rev.Status != domain.EntryStatusBorrador {
+		t.Errorf("Se esperaba estado BORRADOR para el asiento de reversión, obtenido %s", rev.Status)
+	}
+
+	if len(rev.Lines) != 2 {
+		t.Fatalf("Se esperaban 2 líneas en reversión, obtenido %d", len(rev.Lines))
+	}
+
+	if rev.Lines[0].Debit != 0 || rev.Lines[0].Credit != 1000 {
+		t.Errorf("Primera línea mal revertida: Debit %d, Credit %d", rev.Lines[0].Debit, rev.Lines[0].Credit)
+	}
+	if rev.Lines[1].Debit != 1000 || rev.Lines[1].Credit != 0 {
+		t.Errorf("Segunda línea mal revertida: Debit %d, Credit %d", rev.Lines[1].Debit, rev.Lines[1].Credit)
+	}
+}

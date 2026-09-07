@@ -3,14 +3,8 @@ import {
   ShieldAlert, 
   CheckSquare, 
   Square, 
-  AlertTriangle, 
-  FileSpreadsheet, 
-  Database, 
-  Lock, 
   ListChecks, 
   Clock, 
-  CheckCircle2, 
-  Terminal,
   Scale
 } from 'lucide-react';
 

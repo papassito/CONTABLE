@@ -103,7 +103,7 @@ func (s *journalService) PostEntry(ctx context.Context, entryID string) error {
 		return err
 	}
 	if entry == nil {
-		return domain.ErrAccountNotFound
+		return domain.ErrJournalNotFound
 	}
 
 	if entry.Status != domain.EntryStatusBorrador {
@@ -210,7 +210,7 @@ func (s *journalService) ReverseEntry(ctx context.Context, entryID string, reaso
 			return err
 		}
 		if original == nil {
-			return domain.ErrAccountNotFound
+			return domain.ErrJournalNotFound
 		}
 
 		originalLines, err := s.journalRepo.GetLinesByEntryID(txCtx, entryID)

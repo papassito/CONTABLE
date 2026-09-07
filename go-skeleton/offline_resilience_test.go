@@ -1,4 +1,4 @@
-package integration_test
+package fcos_kernel_test
 
 import (
 	"context"
@@ -29,6 +29,8 @@ func TestOfflineResilienceAndExternalAdapterOutage(t *testing.T) {
 		ExpedienteCode: "EXP-SAT-2026-09",
 		CurrentStage:   "PROCESSING",
 	}
+
+	t.Logf("Iniciando simulación de resiliencia offline para expediente %s (ID: %s)", expediente.ExpedienteCode, expediente.ExpedienteID)
 
 	// Simular ejecución del worker RPA
 	_, err := adapter.Download32DOpinion(context.Background(), "CSO180512AAA")

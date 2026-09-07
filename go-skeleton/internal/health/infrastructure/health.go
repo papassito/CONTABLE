@@ -1,15 +1,15 @@
-﻿package infrastructure
+package infrastructure
 
 type HealthChecker interface {
-Ping() bool
+	Ping() bool
 }
 
 type healthChecker struct{}
 
 func NewHealthChecker() HealthChecker {
-return &healthChecker{}
+	return &healthChecker{}
 }
 
 func (h *healthChecker) Ping() bool {
-return true
+	return true
 }
