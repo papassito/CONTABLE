@@ -35,7 +35,7 @@ Write-Host ""
 # -------------------------------------------------------------------------
 Write-Host "[2/6] CAZANDO PROCESOS SOSPECHOSOS (Paths Inusuales)..." -ForegroundColor Cyan
 $suspiciousProcesses = Get-Process | Where-Object { 
-    $_.Path -match "\\AppData\\" -or $_.Path -match "\\Temp\\" 
+    $_.Path -and ($_.Path -match "\\AppData\\" -or $_.Path -match "\\Temp\\")
 }
 
 if ($suspiciousProcesses) {
@@ -83,13 +83,17 @@ $runPaths = @(
 $foundSuspiciousRun = $false
 foreach ($path in $runPaths) {
     if (Test-Path $path) {
-        $items = Get-ItemProperty -Path $path
-        foreach ($prop in $items.psobject.properties) {
-            if ($prop.Name -notmatch "PSPath|PSParentPath|PSChildName|PSDrive|PSProvider") {
-                $val = $prop.Value
-                if ($val -match "\\Temp\\" -or $val -match "\\AppData\\") {
-                    Write-Host "  [!] Alerta de Arranque Sospechoso: $($prop.Name) -> $val" -ForegroundColor Red
-                    $foundSuspiciousRun = $true
+        $items = Get-ItemProperty -Path $path -ErrorAction SilentlyContinue
+        if ($items) {
+            foreach ($item in @($items)) {
+                foreach ($prop in $item.psobject.properties) {
+                    if ($prop.Name -notmatch "PSPath|PSParentPath|PSChildName|PSDrive|PSProvider") {
+                        $val = $prop.Value
+                        if ($val -match "\\Temp\\" -or $val -match "\\AppData\\") {
+                            Write-Host "  [!] Alerta de Arranque Sospechoso: $($prop.Name) -> $val" -ForegroundColor Red
+                            $foundSuspiciousRun = $true
+                        }
+                    }
                 }
             }
         }
@@ -106,7 +110,11 @@ Write-Host ""
 Write-Host "[5/6] VERIFICANDO INTEGRIDAD DEL ARCHIVO HOSTS..." -ForegroundColor Cyan
 $hostsPath = "$env:windir\System32\drivers\etc\hosts"
 if (Test-Path $hostsPath) {
-    $hostsContent = Get-Content $hostsPath | Where-Object { $_ -notmatch "^\s*#" -and $_ -match "\w" }
+    $hostsContent = Get-Content $hostsPath | Where-Object { 
+        $_ -notmatch "^\s*#" -and 
+        $_ -match "\w" -and 
+        $_ -notmatch "^\s*(127\.0\.0\.1|::1|fe80::1%lo0)\s+localhost\s*$"
+    }
     if ($hostsContent.Count -gt 0) {
         Write-Host "  [!] El archivo HOSTS tiene redirecciones activas:" -ForegroundColor Yellow
         $hostsContent | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
@@ -120,9 +128,9 @@ Write-Host ""
 # 6. DETECCIÓN DE PROCESOS HÚNGAROS (Alto Consumo / Mineros / Bloqueadores)
 # -------------------------------------------------------------------------
 Write-Host "[6/6] DETECTANDO PROCESOS DE ALTO CONSUMO (CPU/RAM)..." -ForegroundColor Cyan
-$highHogs = Get-Process | Sort-Object CPU -Descending | Select-Object -First 5
-Write-Host "  [*] Top 5 Procesos usando más CPU:" -ForegroundColor Yellow
-$highHogs | Select-Object Id, ProcessName, @{Name="CPU(s)";Expression={[math]::Round($_.CPU, 2)}}, Path | Format-Table -AutoSize
+$highHogs = Get-Process | Where-Object { $_.CPU -ne $null } | Sort-Object CPU -Descending | Select-Object -First 5
+Write-Host "  [*] Top 5 Procesos con mayor tiempo acumulado de CPU (Segundos):" -ForegroundColor Yellow
+$highHogs | Select-Object Id, ProcessName, @{Name="CPU Acumulado (s)";Expression={[math]::Round($_.CPU, 2)}}, Path | Format-Table -AutoSize
 
 Write-Host "===============================================================================" -ForegroundColor Red
 Write-Host " SCAN DE DIAGNÓSTICO FINALIZADO " -ForegroundColor Green

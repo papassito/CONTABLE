@@ -2,8 +2,7 @@
 .SYNOPSIS
     Script de Tratamiento Médico para FCOS v2.2 Kernel.
 .DESCRIPTION
-    Pobla los archivos vacíos 'secret_envelope.go' y 'vault.go' en la capa de dominio,
-    reparando los errores 'expected package, found EOF' en go vet.
+    Sanea la capa de dominio eliminando contratos duplicados obsoletos y toma el pulso de salud del compilador.
 #>
 
 [CmdletBinding()]
@@ -28,40 +27,19 @@ Write-Host "📁 Proyecto objetivo: $projectDir`n" -ForegroundColor Gray
 
 $domainDir = Join-Path -Path $projectDir -ChildPath "internal\domain"
 
-# 2. Restauración de secret_envelope.go
 $secretEnvelopePath = Join-Path -Path $domainDir -ChildPath "secret_envelope.go"
-$secretEnvelopeCode = @'
-package domain
-
-import "time"
-
-// SecretEnvelope representa la estructura de un contenedor cifrado de secretos.
-type SecretEnvelope struct {
-	ID           string    `json:"id"`
-	KeyID        string    `json:"key_id"`
-	Ciphertext   []byte    `json:"ciphertext"`
-	CreatedAtUTC time.Time `json:"created_at_utc"`
-}
-'@
-
-Set-Content -Path $secretEnvelopePath -Value $secretEnvelopeCode -Encoding UTF8
-Write-Host "✅ Archivo 'secret_envelope.go' curado e inyectado exitosamente." -ForegroundColor Green
-
-# 3. Restauración de vault.go
 $vaultPath = Join-Path -Path $domainDir -ChildPath "vault.go"
-$vaultCode = @'
-package domain
 
-import "context"
-
-// SecretsVault define el contrato para el cifrado y manejo de secretos.
-type SecretsVault interface {
-	Encrypt(ctx context.Context, tenantID string, plaintext []byte) (*SecretEnvelope, error)
+# 2. Saneamiento de contratos duplicados en internal/domain para prevenir colisiones
+if (Test-Path -Path $secretEnvelopePath) {
+    Remove-Item -Path $secretEnvelopePath -Force
+    Write-Host "🧹 Archivo obsoleto 'secret_envelope.go' removido para evitar colisiones de dominio con internal/secrets." -ForegroundColor Green
 }
-'@
 
-Set-Content -Path $vaultPath -Value $vaultCode -Encoding UTF8
-Write-Host "✅ Archivo 'vault.go' curado e inyectado exitosamente." -ForegroundColor Green
+if (Test-Path -Path $vaultPath) {
+    Remove-Item -Path $vaultPath -Force
+    Write-Host "🧹 Archivo obsoleto 'vault.go' removido para evitar colisiones de dominio con internal/secrets." -ForegroundColor Green
+}
 
 # 4. Sincronización y Alta Médica
 Push-Location -Path $projectDir

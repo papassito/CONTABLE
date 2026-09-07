@@ -17,17 +17,25 @@ Write-Host " 🔍 LECTOR Y DIAGNÓSTICO DE ERRORES JSON                         
 Write-Host "==================================================================" -ForegroundColor Cyan
 
 # 1. Verificar si el archivo existe
-if (-not (Test-Path -Path $JsonPath)) {
+$resolvedPath = $JsonPath
+if (-not (Test-Path -Path $resolvedPath) -and $PSScriptRoot) {
+    $scriptRelativePath = Join-Path -Path $PSScriptRoot -ChildPath $JsonPath
+    if (Test-Path -Path $scriptRelativePath) {
+        $resolvedPath = $scriptRelativePath
+    }
+}
+
+if (-not (Test-Path -Path $resolvedPath)) {
     Write-Host "❌ Error: No se encontró el archivo JSON en la ruta: '$JsonPath'" -ForegroundColor Red
     $global:LASTEXITCODE = 1
     return
 }
 
-Write-Host "📁 Leyendo archivo: $JsonPath`n" -ForegroundColor Gray
+Write-Host "📁 Leyendo archivo: $resolvedPath`n" -ForegroundColor Gray
 
 # 2. Leer y parsear el contenido JSON
 try {
-    $rawContent = Get-Content -Path $JsonPath -Raw -ErrorAction Stop
+    $rawContent = Get-Content -Path $resolvedPath -Raw -Encoding UTF8 -ErrorAction Stop
     $jsonData = ConvertFrom-Json -InputObject $rawContent -ErrorAction Stop
 }
 catch {
@@ -37,29 +45,49 @@ catch {
     return
 }
 
-# 3. Identificar y filtrar errores
 $detectedErrors = [System.Collections.Generic.List[PSCustomObject]]::new()
 
-# Si el JSON es una lista de elementos (Array)
-if ($jsonData -is [Array]) {
-    foreach ($item in $jsonData) {
-        # Evaluar campos comunes de error
-        if ($item.status -eq "error" -or 
-            $item.level -eq "error" -or 
-            $item.type -eq "error" -or 
-            [string]::IsNullOrWhiteSpace($item.error) -eq $false) {
+# 3. Analizador Recursivo Profundo para Estructuras Complejas y de Telemetría
+function Find-JsonElement ($element, $pathContext = "$") {
+    if ($element -is [Array]) {
+        for ($i = 0; $i -lt $element.Count; $i++) {
+            Find-JsonElement $element[$i] ($pathContext + "[" + $i + "]")
+        }
+    } elseif ($element -is [PSCustomObject] -or $element -is [System.Management.Automation.PSCustomObject]) {
+        # Evaluar si este objeto en sí mismo es un nodo de error
+        $hasErrorPattern = $false
+        $errorProps = @{}
+        
+        foreach ($prop in $element.PSObject.Properties) {
+            $name = $prop.Name.ToLower()
+            $valStr = [string]$prop.Value
             
-            $detectedErrors.Add($item)
+            # Validar coincidencias de patrones de error únicamente en nodos terminales (primitivos)
+            $isPrimitive = $prop.Value -isnot [PSCustomObject] -and $prop.Value -isnot [Array] -and $prop.Value -isnot [System.Collections.IList]
+            
+            if ($isPrimitive -and (
+                ($name -eq "status" -and $valStr -eq "error") -or
+                ($name -eq "level" -and ($valStr -eq "error" -or $valStr -eq "fail")) -or
+                ($name -match "error|exception|fail" -and -not [string]::IsNullOrWhiteSpace($valStr))
+            )) {
+                $hasErrorPattern = $true
+            }
+            $errorProps[$prop.Name] = $prop.Value
+        }
+        
+        if ($hasErrorPattern) {
+            $errorProps["JSONPath"] = $pathContext
+            $detectedErrors.Add([PSCustomObject]$errorProps)
+        }
+        
+        # Continuar la búsqueda recursivamente por propiedades hijas
+        foreach ($prop in $element.PSObject.Properties) {
+            Find-JsonElement $prop.Value "$pathContext.$($prop.Name)"
         }
     }
 }
-# Si el JSON es un objeto único
-else {
-    # Comprobar si el objeto tiene una propiedad de errores o un estado de fallo
-    if ($jsonData.status -eq "error" -or $jsonData.errors -or $jsonData.error) {
-        $detectedErrors.Add($jsonData)
-    }
-}
+
+Find-JsonElement $jsonData
 
 # 4. Mostrar resultados
 Write-Host "📊 RESULTADOS DEL ANÁLISIS:" -ForegroundColor Yellow

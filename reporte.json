@@ -1,0 +1,39 @@
+{
+  "metadatos_sistema": {
+    "entorno": "desarrollo",
+    "host": "CMSOLUCIONES",
+    "nucleo_version": "2.2.0"
+  },
+  "servicios": [
+    {
+      "nombre": "fcos-database",
+      "status": "success",
+      "detalles": {
+        "motor": "SQLite WAL",
+        "conexiones_activas": 1
+      }
+    },
+    {
+      "nombre": "fcos-audit-trail",
+      "status": "error",
+      "error_codigo": "ERR_CHAIN_FORK_ATTEMPT",
+      "level": "fail",
+      "mensaje": "Se detectó un intento de bifurcación de la cadena de bloques para el tenant_id default-tenant."
+    }
+  ],
+  "telemetria": {
+    "modulos_activos": 12,
+    "diagnosticos_adicionales": {
+      "detecciones_hosts": {
+        "estatus_archivo": "advertencia",
+        "excepciones": [
+          {
+            "dns_redireccion": "127.0.0.1",
+            "host_local": "licencias.klik.com",
+            "level": "error"
+          }
+        ]
+      }
+    }
+  }
+}

@@ -133,7 +133,7 @@ foreach ($system in $anatomyMap.Keys) {
         }
     }
 
-    $uniqueCount = ($matchedFiles | Select-Object -Unique).Count
+    $uniqueCount = @($matchedFiles | Select-Object -Unique).Count
 
     if ($uniqueCount -gt 0) {
         Write-Host "  $system : $uniqueCount componentes activos [OK]" -ForegroundColor Green

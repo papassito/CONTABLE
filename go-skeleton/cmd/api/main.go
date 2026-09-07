@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"log"
 	"net/http"
 
@@ -14,7 +13,7 @@ import (
 
 func main() {
 	// 1. Initialize SQLite database with WAL (Write-Ahead Logging) mode
-	db, err := sql.Open("sqlite", "file:fcos_local.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
+	db, err := database.InitDB("file:fcos_local.db?_pragma=busy_timeout(5000)")
 	if err != nil {
 		log.Fatalf("Critical failure connecting to SQLite database: %v", err)
 	}
@@ -27,7 +26,7 @@ func main() {
 	uow := database.NewUnitOfWork(db)
 
 	// 3. Inject real dependencies into Application Services
-	auditService := service.NewLoggingAuditService()
+	auditService := service.NewDBAuditService(db)
 	accountSvc := service.NewAccountService(accountRepo)
 	journalSvc := service.NewJournalService(journalRepo, accountRepo, ledgerRepo, uow, auditService)
 
@@ -35,12 +34,13 @@ func main() {
 	router := httphandler.NewRouter(accountSvc, journalSvc)
 	archHandler := httphandler.NewArchitectureHandler("./")
 
+	mux := http.NewServeMux()
 	// Endpoint for dynamic inspection from the frontend
-	http.HandleFunc("/api/v1/architecture/files", archHandler.GetFileTree)
-	http.Handle("/", router)
+	mux.HandleFunc("/api/v1/architecture/files", archHandler.GetFileTree)
+	mux.Handle("/", router)
 
 	log.Println("🚀 FCOS v2.2 Kernel started successfully on http://localhost:8080")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	if err := http.ListenAndServe(":8080", mux); err != nil {
 		log.Fatalf("Critical error in HTTP server: %v", err)
 	}
 }

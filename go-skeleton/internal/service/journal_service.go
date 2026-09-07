@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/gowebpki/jcs"
 	"github.com/klik/fcos-kernel/internal/domain"
 	"github.com/klik/fcos-kernel/internal/repository"
@@ -64,10 +66,16 @@ func (s *journalService) CreateDraft(ctx context.Context, entry *domain.JournalE
 	}
 
 	// Validar que cada cuenta exista, esté activa y acepte movimientos
+	accountsCache := make(map[string]*domain.Account)
 	for _, line := range entry.Lines {
-		account, err := s.accountRepo.GetByID(ctx, line.AccountID)
-		if err != nil || account == nil {
-			return nil, domain.ErrAccountNotFound
+		account, ok := accountsCache[line.AccountID]
+		if !ok {
+			var err error
+			account, err = s.accountRepo.GetByID(ctx, line.AccountID)
+			if err != nil || account == nil {
+				return nil, domain.ErrAccountNotFound
+			}
+			accountsCache[line.AccountID] = account
 		}
 		if account.Status != domain.AccountStatusActiva {
 			return nil, domain.ErrAccountInactive
@@ -139,6 +147,7 @@ func (s *journalService) PostEntry(ctx context.Context, entryID string) error {
 		// 4. Preparar movimientos y agrupar saldos en memoria (Evita N+1 queries)
 		ledgerEntries := make([]domain.LedgerEntry, len(lines))
 		netBalances := make(map[string]int64)
+		accountsCache := make(map[string]*domain.Account)
 
 		for i, line := range lines {
 			ledgerEntries[i] = domain.LedgerEntry{
@@ -151,9 +160,14 @@ func (s *journalService) PostEntry(ctx context.Context, entryID string) error {
 			}
 
 			// Requerimos el tipo de cuenta para saber si suma o resta
-			account, err := s.accountRepo.GetByID(txCtx, line.AccountID)
-			if err != nil || account == nil {
-				return domain.ErrAccountNotFound
+			account, ok := accountsCache[line.AccountID]
+			if !ok {
+				var err error
+				account, err = s.accountRepo.GetByID(txCtx, line.AccountID)
+				if err != nil || account == nil {
+					return domain.ErrAccountNotFound
+				}
+				accountsCache[line.AccountID] = account
 			}
 
 			var amount int64
@@ -191,9 +205,13 @@ func (s *journalService) PostEntry(ctx context.Context, entryID string) error {
 				"entry_id":    entry.ID,
 				"number":      entry.Number,
 				"total_debit": entry.TotalDebit,
+				"posted_at":   time.Now().UTC().Format(time.RFC3339),
 				"status":      string(domain.EntryStatusContabilizado),
 			}
-			canonicalHash, _ := computeCanonicalHash(auditPayload) // Omití el manejo de err por brevedad visual
+			canonicalHash, err := computeCanonicalHash(auditPayload)
+			if err != nil {
+				return err
+			}
 			auditPayload["canonical_hash"] = canonicalHash
 
 			if err = s.auditSvc.AppendEvent(txCtx, "default-tenant", "POST_CONTABILIZAR", "system-user", auditPayload); err != nil {
@@ -236,6 +254,7 @@ func (s *journalService) ReverseEntry(ctx context.Context, entryID string, reaso
 		}
 
 		reversedEntry = &domain.JournalEntry{
+			ID:          uuid.New().String(),
 			Number:      "REV-" + original.Number,
 			Date:        time.Now(),
 			Concept:     "Reversión de " + original.Number + " - Motivo: " + reason,
@@ -258,6 +277,7 @@ func (s *journalService) ReverseEntry(ctx context.Context, entryID string, reaso
 			"original_entry_id": original.ID,
 			"reversed_entry_id": reversedEntry.ID,
 			"reason":            reason,
+			"reversed_at":       time.Now().UTC().Format(time.RFC3339),
 			"status":            string(domain.EntryStatusBorrador),
 		}
 		canonicalHash, err := computeCanonicalHash(auditPayload)

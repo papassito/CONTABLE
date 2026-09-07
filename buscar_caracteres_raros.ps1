@@ -24,8 +24,9 @@ if ($Fix) {
 }
 Write-Host "📂 Escaneando: $targetPath`n" -ForegroundColor Yellow
 
-# Obtener archivos respetando exclusiones
-$files = Get-ChildItem -Path $targetPath -Recurse -Include $Extensions -File -ErrorAction SilentlyContinue | ForEach-Object {
+# Obtener archivos respetando exclusiones (sufijando con * para resolver el comportamiento del filtro -Include en PowerShell)
+$searchPath = Join-Path -Path $targetPath -ChildPath "*"
+$files = Get-ChildItem -Path $searchPath -Recurse -Include $Extensions -File -ErrorAction SilentlyContinue | ForEach-Object {
     # Normalizar la ruta para que la coincidencia sea independiente del SO
     $normalizedPath = $_.FullName.Replace('\', '/')
 
@@ -65,28 +66,35 @@ foreach ($file in $files) {
     $fileContentChanged = $false
 
     # 1. Detectar marcas UTF-8 BOM leyendo los primeros 3 bytes reales
+    $stream = $null
+    $hasBom = $false
     try {
-        $stream = New-Object System.IO.FileStream($file.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read)
+        $stream = New-Object System.IO.FileStream($file.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
         $bytes = New-Object byte[] 3
         $bytesRead = $stream.Read($bytes, 0, 3)
-        $stream.Close()
-
-        if ($bytesRead -eq 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
-            Write-Host "⚠️  [UTF-8 BOM] $relativePath" -ForegroundColor Yellow
-            $bomCount++
-            
-            if ($Fix) {
-                # Leer archivo ignorando el BOM y marcar para guardar sin BOM
-                $content = [System.IO.File]::ReadAllText($file.FullName)
-                $fileContentChanged = $true
-                Write-Host "   ↳ 🔧 Removiendo marca BOM..." -ForegroundColor Green
-            } else {
-                Write-Host "   ↳ Explicación: Posee marca de orden de bytes al inicio (común en Windows, problemático en Go)." -ForegroundColor DarkYellow
-            }
-        }
     } catch {
         Write-Host "❌ Error al leer bytes de $($file.Name): $_" -ForegroundColor Red
+        if ($stream -ne $null) { $stream.Close(); $stream.Dispose() }
         continue
+    } finally {
+        if ($stream -ne $null) {
+            $stream.Close()
+            $stream.Dispose()
+        }
+    }
+
+    if ($bytesRead -eq 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+        Write-Host "⚠️  [UTF-8 BOM] $relativePath" -ForegroundColor Yellow
+        $bomCount++
+        
+        if ($Fix) {
+            # Leer archivo ignorando el BOM y marcar para guardar sin BOM
+            $content = [System.IO.File]::ReadAllText($file.FullName)
+            $fileContentChanged = $true
+            Write-Host "   ↳ 🔧 Removiendo marca BOM..." -ForegroundColor Green
+        } else {
+            Write-Host "   ↳ Explicación: Posee marca de orden de bytes al inicio (común en Windows, problemático en Go)." -ForegroundColor DarkYellow
+        }
     }
 
     # 2. Análisis línea por línea en busca de Mojibake o caracteres de control
@@ -104,15 +112,18 @@ foreach ($file in $files) {
             $corruptCount++
             
             if ($Fix) {
+                $originalLine = $line
                 foreach ($key in $mojibakeReplacements.Keys) {
-                    if ($line -contains $key) {
+                    if ($line.Contains($key)) {
                         $line = $line.Replace($key, $mojibakeReplacements[$key])
                     }
                 }
                 # Limpiar cualquier residuo de marcas de control mojibake comunes
                 $line = $line -replace "â", "—"
                 $line = $line -replace "â", ""
-                $fileContentChanged = $true
+                if ($line -ne $originalLine) {
+                    $fileContentChanged = $true
+                }
             }
         }
 

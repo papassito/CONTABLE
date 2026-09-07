@@ -2,6 +2,8 @@ package main_test
 
 import (
 	"database/sql"
+	"fmt"
+	"sync"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -123,4 +125,57 @@ func TestSecretsVaultUniqueness(t *testing.T) {
 	if err == nil {
 		t.Fatalf("FALLO DE BÓVEDA: Se permitió registrar duplicados de secret_type 'CIEC' para el mismo Tenant")
 	}
+}
+
+// 4. Test de Estrés y Concurrencia de la Cadena de Auditoría (Stress Test)
+func TestAuditLedgerConcurrencyStress(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Insertar tenant base de estrés
+	_, err := db.Exec(`INSERT INTO tenant_tenants (id, code, legal_name) VALUES ('t_stress', 'T_STRESS', 'Tenant Stress')`)
+	if err != nil {
+		t.Fatalf("Error al preparar datos de estrés: %v", err)
+	}
+
+	const goroutines = 12
+	const iterationsPerGoroutine = 15
+	var wg sync.WaitGroup
+	var dbMu sync.Mutex // Protege la base de datos SQLite en memoria de bloqueos de lectura/escritura concurrentes
+
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func(goID int) {
+			defer wg.Done()
+			for j := 0; j < iterationsPerGoroutine; j++ {
+				eventID := fmt.Sprintf("evt-g%d-i%d", goID, j)
+
+				dbMu.Lock()
+				// 1. Inserción válida de evento
+				_, err := db.Exec(`INSERT INTO audit_hash_chain (event_id, tenant_id, node_id, actor_id, event_type, canonical_payload_hash, previous_hash, chain_hash) 
+					VALUES (?, 't_stress', 'node-s', 'actor-s', 'STRESS_TEST', 'hash_val', 'prev_val', 'chain_val')`, eventID)
+				dbMu.Unlock()
+				if err != nil {
+					t.Errorf("Error al insertar evento en estrés: %v", err)
+					return
+				}
+
+				dbMu.Lock()
+				// 2. Intento de violación de inmutabilidad (Debe fallar)
+				_, updateErr := db.Exec(`UPDATE audit_hash_chain SET previous_hash = 'tampered' WHERE event_id = ?`, eventID)
+				// 3. Intento de eliminación concurrente (Debe fallar)
+				_, deleteErr := db.Exec(`DELETE FROM audit_hash_chain WHERE event_id = ?`, eventID)
+				dbMu.Unlock()
+
+				if updateErr == nil {
+					t.Errorf("FALLO DE SEGURIDAD EN ESTRÉS: Se permitió modificar un registro inmutable (%s)", eventID)
+				}
+				if deleteErr == nil {
+					t.Errorf("FALLO DE SEGURIDAD EN ESTRÉS: Se permitió eliminar un registro inmutable (%s)", eventID)
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
 }

@@ -33,8 +33,12 @@ func (s *accountService) CreateAccount(ctx context.Context, account *domain.Acco
 		return errors.New("el código contable no puede estar vacío")
 	}
 
+	// Verificación segura de existencia
 	existing, err := s.accountRepo.GetByCode(ctx, account.Code)
-	if err == nil && existing != nil {
+	if err != nil && !errors.Is(err, domain.ErrAccountNotFound) {
+		return fmt.Errorf("error al verificar existencia de la cuenta: %w", err)
+	}
+	if existing != nil {
 		return fmt.Errorf("la cuenta contable con código %s ya existe", account.Code)
 	}
 
@@ -95,6 +99,27 @@ func (s *accountService) ListAccounts(ctx context.Context) ([]*domain.Account, e
 }
 
 func (s *accountService) UpdateAccount(ctx context.Context, account *domain.Account) error {
+	existing, err := s.accountRepo.GetByID(ctx, account.ID)
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		return domain.ErrAccountNotFound
+	}
+
+	// Invariante: El saldo nunca debe modificarse directamente mediante UpdateAccount
+	if account.CurrentBal != existing.CurrentBal {
+		return errors.New("no se puede modificar el saldo de la cuenta directamente")
+	}
+
+	// Invariante: El código y tipo son inmutables tras su creación para asegurar la coherencia del libro mayor
+	if account.Code != existing.Code {
+		return errors.New("el código de una cuenta contable existente es inmutable")
+	}
+	if account.Type != existing.Type {
+		return errors.New("el tipo de una cuenta contable existente es inmutable")
+	}
+
 	return s.accountRepo.Update(ctx, account)
 }
 

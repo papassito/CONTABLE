@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 )
 
 type UnitOfWork interface {
@@ -30,7 +31,8 @@ func (uow *sqlUnitOfWork) Execute(ctx context.Context, fn func(txCtx context.Con
 	txCtx := context.WithValue(ctx, txKey, tx)
 	if err := fn(txCtx); err != nil {
 		if rbErr := tx.Rollback(); rbErr != nil {
-			return fmt.Errorf("error en ejecucion: %v (rollback fallido: %v)", err, rbErr)
+			log.Printf("[UOW-ROLLBACK-FATAL] Failed to rollback transaction: %v. Original error: %v", rbErr, err)
+			return fmt.Errorf("error de persistencia interna: la operación no pudo ser completada")
 		}
 		return err
 	}

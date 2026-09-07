@@ -32,13 +32,26 @@ $cleanedCount = 0
 
 foreach ($file in $goFiles) {
     # Optimización: Leer solo los primeros 3 bytes para detectar el BOM
-    $stream = New-Object System.IO.FileStream($file.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read)
-    $bomBytes = New-Object byte[] 3
-    $bytesRead = $stream.Read($bomBytes, 0, 3)
-    $stream.Close()
-    
+    $stream = $null
+    $hasBom = $false
+    try {
+        $stream = New-Object System.IO.FileStream($file.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        $bomBytes = New-Object byte[] 3
+        $bytesRead = $stream.Read($bomBytes, 0, 3)
+        if ($bytesRead -ge 3 -and $bomBytes[0] -eq 0xEF -and $bomBytes[1] -eq 0xBB -and $bomBytes[2] -eq 0xBF) {
+            $hasBom = $true
+        }
+    } catch {
+        Write-Host "❌ Error al verificar BOM en $($file.Name): $_" -ForegroundColor Red
+    } finally {
+        if ($stream -ne $null) {
+            $stream.Close()
+            $stream.Dispose()
+        }
+    }
+
     # Evaluar si los primeros 3 bytes son 0xEF, 0xBB, 0xBF
-    if ($bytesRead -ge 3 -and $bomBytes[0] -eq 0xEF -and $bomBytes[1] -eq 0xBB -and $bomBytes[2] -eq 0xBF) {
+    if ($hasBom) {
         
         # Robustez: Usar los manejadores de texto de .NET para reescribir sin BOM
         $content = [System.IO.File]::ReadAllText($file.FullName) # ReadAllText maneja y omite el BOM automáticamente
