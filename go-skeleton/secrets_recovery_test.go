@@ -1,4 +1,4 @@
-package fcos_kernel_test
+package main_test
 
 import (
 	"bytes"

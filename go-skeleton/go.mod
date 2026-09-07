@@ -5,6 +5,7 @@ go 1.22
 require (
 	github.com/google/uuid v1.6.0
 	github.com/gowebpki/jcs v1.0.1
+	github.com/wailsapp/wails/v2 v2.15.0
 	modernc.org/sqlite v1.29.5
 )
 
