@@ -10,10 +10,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/contable-fix/core/internal/domain"
-	"github.com/contable-fix/core/internal/repository"
-	"github.com/contable-fix/core/internal/service"
-	"github.com/contable-fix/core/pkg/database"
+	"github.com/klik/fcos-kernel/internal/domain"
+	"github.com/klik/fcos-kernel/internal/repository"
+	"github.com/klik/fcos-kernel/internal/service"
+	"github.com/klik/fcos-kernel/pkg/database"
 	_ "modernc.org/sqlite"
 )
 

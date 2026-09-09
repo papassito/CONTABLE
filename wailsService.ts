@@ -236,7 +236,7 @@ export async function listAccounts(): Promise<Account[]> {
 
 function handleKernelError(error: any, defaultMsg: string): Error {
   const rawMessage = typeof error === 'string' ? error : error?.message || '';
-  
+
   if (rawMessage.includes('unbalanced journal')) {
     return new Error('Violación de Partida Doble: Los débitos y créditos no cuadran.');
   }
@@ -255,6 +255,6 @@ function handleKernelError(error: any, defaultMsg: string): Error {
   if (rawMessage.includes('cuenta padre no encontrada') || rawMessage.includes('parent account not found')) {
     return new Error('Jerarquía Inválida: La cuenta padre especificada para esta clasificación no existe.');
   }
-  
+
   return new Error(`${defaultMsg}: ${rawMessage}`);
 }

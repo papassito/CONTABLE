@@ -1,0 +1,38 @@
+{
+  "version": "FCOS-docs-20260909-1",
+  "created_utc": "2026-09-09T21:32:54.0028626Z",
+  "type": "SHA-256 integrity manifest; not a digital signature",
+  "source": "C:\\Users\\Radio 2027\\Desktop\\Soft Septioembre 2026\\CONTABLE",
+  "files": [
+    {
+      "file": "README.md",
+      "bytes": 11122,
+      "sha256": "919ee7b1229dc58d294cf856d57a4a7f60e8b5dc29bb100444ffd327daba25e2"
+    },
+    {
+      "file": "ARCHITECTURE.md",
+      "bytes": 9583,
+      "sha256": "105fd3212315f449b32f2470fcc6aeb52b5afd78a04701bdeefa90342dbf229a"
+    },
+    {
+      "file": "REQUIREMENTS.md",
+      "bytes": 8142,
+      "sha256": "ec6b373a869cff3c42721f568a31efaf959020c786186924a900205aa504d507"
+    },
+    {
+      "file": "MAP.md",
+      "bytes": 6618,
+      "sha256": "da858142ce59d518d52a596a4db67d94496a18adf1840db20ce50f825645cf7c"
+    },
+    {
+      "file": "SECURITY.md",
+      "bytes": 13784,
+      "sha256": "da238b7bf80548990d2c19838bd0facc09b1009f96b50b3636e305731e8ce9a6"
+    },
+    {
+      "file": "AUDIT_GUIDE.md",
+      "bytes": 9443,
+      "sha256": "76c9be583ff8b86293e49f2f4c2db1828ab4f2377adcda60567072d7d977013e"
+    }
+  ]
+}

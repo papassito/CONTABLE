@@ -1,2 +1,0 @@
-This is a placeholder file to keep Go's //go:embed compiler directive happy during IDE inspection.
-It is replaced dynamically by compiled React assets during production builds.

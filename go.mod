@@ -1,4 +1,4 @@
-module github.com/contable-fix/core
+module github.com/klik/fcos-kernel
 
 go 1.22
 
