@@ -1,43 +1,61 @@
-# REQUIREMENTS.md — Especificación de Requerimientos del Sistema (FCOS v2.2)
+# FCOS v2.2 — Requisitos y aceptación
 
----
+## Estado
 
-## 1. Requerimientos Funcionales (RF)
+Los siguientes requisitos son normativos para la base documental. Su estado de implementación es **no verificado**. Aprobarlos requiere evidencias identificadas en AUDIT_GUIDE; no basta con que aparezcan en un README.
 
-### 1.1. Catálogo y Cuentas Contables
-* **RF-01.1 — Afectabilidad:** Únicamente las cuentas auxiliares aceptan asientos.
-* **RF-01.2 — Aislamiento Multi-Tenant:** Cada entidad multi-tenant estará asociada a un `tenant_id` validado. Se garantiza mediante el paso explícito de `ctx` y filtros `WHERE id = ? AND tenant_id = ?`.
+## Requisitos funcionales
 
-### 1.2. Diario y Libro Mayor
-* **RF-02.1 — Partida Doble Rigurosa:** Un asiento será aceptado únicamente si $\sum \text{debit\_cents} = \sum \text{credit\_cents} > 0$ y cada línea cumple las restricciones de no negatividad y exclusión mutua de débito/crédito.
-* **RF-02.2 — Flujo de Estados Inmutable:** El estado sigue el flujo `BORRADOR` $\rightarrow$ `CONTABILIZADO`. No existe la transición a `ANULADO`.
-* **RF-02.3 — Consistencia de la Fuente de Verdad:** `ledger_entries` es la fuente de verdad. `accounts.balance_cents` es solo una proyección materializada. Ambos se actualizan de manera atómica (ACID).
-* **RF-02.4 — Reversión Atomizada:** Toda corrección se realiza mediante `ReverseEntry` en un Unit of Work atómico.
+| ID | Requisito | Criterio de aceptación |
+| --- | --- | --- |
+| RF-01 | Cada operación requiere identidad y tenant autorizado. | Una identidad sin acceso no puede leer, escribir ni inferir objetos de otro tenant. |
+| RF-02 | Códigos de cuenta únicos por tenant; jerarquía sin ciclos ni padres de otro tenant. | Rechazar duplicados locales, ciclos y relaciones cruzadas; admitir igual código en tenants distintos. |
+| RF-03 | Solo cuentas activas, auxiliares y sin hijos aceptan movimientos. | Rechazar contabilización en cuentas inactivas o agrupadoras; impedir crear hijos bajo una cuenta afectable sin una transición válida. |
+| RF-04 | No desactivar cuentas con saldo distinto de cero. | La validación y el cambio se ejecutan sin carreras con contabilizaciones. |
+| RF-05 | Borradores editables sin efecto contable. | Guardar un borrador incompleto no altera mayor ni saldo; sus referencias presentes pertenecen al tenant. |
+| RF-06 | Contabilización equilibrada, positiva y con al menos dos líneas. | Rechazar asiento nulo, una sola línea, importes negativos, línea nula, doble importe positivo o desbalance de un centavo. |
+| RF-07 | Solo estados BORRADOR y CONTABILIZADO. | Ningún flujo normal modifica o elimina un asiento contabilizado ni sus líneas. |
+| RF-08 | Reversión mediante nuevo asiento. | Exigir motivo, fecha válida y mismo tenant; invertir importes; impedir segunda reversión directa y conservar intacto el original. |
+| RF-09 | Períodos controlados por tenant. | Rechazar contabilización o reversión con fecha en período cerrado o inexistente; probar carrera entre cierre y posteo. |
+| RF-10 | Mayor como fuente de verdad y saldo como proyección. | Reconstruir saldos desde movimientos produce exactamente los saldos proyectados. |
+| RF-11 | Mayor y balance de comprobación consistentes. | Filtros de tenant, cuenta y fecha correctos; débitos y créditos globales coinciden sin desbordamiento. |
+| RF-12 | Atomicidad de contabilización y reversión. | Un fallo inyectado en cualquier escritura deja todas las tablas sin efectos parciales. |
+| RF-13 | Auditoría local atómica y verificable. | Cada cambio auditado añade evento; una falla de cadena revierte el cambio asociado y genera un error explícito. |
+| RF-14 | Outbox para integración externa. | La caída externa no bloquea contabilidad; el reintento no duplica el efecto del consumidor. |
 
-### 1.3. Auditoría e Inmutabilidad
-* **RF-03.1 — Serialización Canónica (RFC 8785 / JCS):** Los importes se normalizan como enteros en céntimos antes de convertirlos a JSON canónico y pasarlos por SHA-256.
-* **RF-03.2 — Detección de Alteraciones (Tamper-Evident):** La cadena criptográfica local está diseñada para evidenciar y detectar modificaciones no autorizadas comparándola con puntos de control de confianza (Checkpoints).
-* **RF-03.3 — Anclaje Externo y Autonomía:** El sistema soportará anclaje asíncrono. La indisponibilidad del anclaje externo **jamás** bloqueará la contabilidad local (Principio Core Offline).
-* **RF-03.4 — Protección Anti-Bifurcación:** El sistema aplicará serialización de escritura SQLite con `BEGIN IMMEDIATE` para rechazar reescrituras.
+## Requisitos numéricos y de transporte
 
-### 1.4. Identidad del Nodo
-* **RF-04.1 — Fingerprinting de Entorno:** El contexto `Node` recopilará atributos mínimos (CPU, RAM, Hostname, OS). El fingerprinting operacional utilizará únicamente atributos mínimos necesarios; no se requiere Disk UUID. Esto no constituye atestación de hardware (Hardware Attestation).
+| ID | Requisito | Criterio de aceptación |
+| --- | --- | --- |
+| NUM-01 | Importes de MXN en centavos enteros `int64`. | No hay aritmética contable de punto flotante; entradas y operaciones fuera de rango se rechazan. |
+| NUM-02 | Importes IPC/JSON como cadenas decimales canónicas. | Ida y vuelta exacta, incluidos valores mayores que el entero seguro de JavaScript; rechazar fracciones, exponentes y ceros iniciales. |
+| NUM-03 | Resultados acumulados sujetos al mismo rango. | Sumas, saldos y reversión de extremos nunca envuelven ni truncan el valor. |
+| NUM-04 | Fechas contables separadas de timestamps. | Una fecha `YYYY-MM-DD` no cambia por conversión de zona; eventos registran UTC con RFC 3339. |
 
----
+## Requisitos de seguridad y operación
 
-## 2. Requerimientos No Funcionales (RNF)
+| ID | Requisito | Criterio de aceptación |
+| --- | --- | --- |
+| SEG-01 | Cadena auditada por tenant con secuencia y enlace. | Secuencias independientes, detección de modificaciones y verificación contra checkpoints confiables según SECURITY. |
+| SEG-02 | Claves y secretos fuera del repositorio y los logs. | Inspección sin material sensible; lectura restringida y cifrado autenticado verificado. |
+| SEG-03 | Autorización en cada caso de uso. | El transporte no puede omitir controles; selección de tenant no equivale a autenticación. |
+| SEG-04 | Diagnóstico limitado. | Endpoints de inspección ausentes o deshabilitados en producción; acceso local y autenticado en desarrollo. |
+| OPS-01 | SQLite WAL y claves foráneas activas por conexión. | Verificación efectiva de configuración y prueba de rechazo de referencias inválidas. |
+| OPS-02 | Contabilidad local autónoma. | Con red desconectada funcionan borradores, posteo, reversión, consultas y auditoría local. |
+| OPS-03 | Backup y restauración consistentes. | Restaurar una copia soportada recupera mayor, proyecciones y auditoría verificables; copiar solo el archivo principal con WAL activo no se acepta como procedimiento. |
+| OPS-04 | Actualización offline verificable. | Paquete con autenticidad e integridad comprobables; fallo de verificación impide instalar; migración y recuperación ensayadas. |
+| OPS-05 | Identidad de nodo de mínima recopilación. | Atributos operacionales mínimos documentados; no se presenta fingerprinting como atestación de hardware. |
 
-* **RNF-01.1 — Cero Aritmética de Flotantes:** Aritmética contable 100% sobre enteros.
-* **RNF-01.2 — Despliegue Cgo-Free:** Compilación nativa directa vía Go/Wails.
-* **RNF-01.3 — Concurrencia SQLite:** Uso de SQLite en modo WAL con `busy_timeout`.
-* **RNF-01.4 — Estrategia de Actualización:** Actualizaciones offline verificadas criptográficamente. Infraestructura OTA estrictamente opcional.
+## Rendimiento
 
----
+PERF-01 es un objetivo pendiente de validación: al menos 250 transacciones contables confirmadas por segundo en un entorno de referencia con SSD NVMe.
 
-## 3. Especificación de Rendimiento (PERF-01)
+El benchmark debe definir hardware, SO, versiones de Go y SQLite/driver, tamaño inicial de base, tenants, concurrencia, líneas por asiento, pragmas, duración y calentamiento. Una operación incluye mayor, saldo, estado y auditoría; no se cuentan INSERT aislados como contabilizaciones.
 
-El siguiente valor constituye un objetivo de rendimiento y no una garantía de capacidad hasta que sea validado mediante benchmarks reproducibles.
+Registrar throughput confirmado, errores, reintentos y latencias p50/p95/p99. No se aprueba capacidad sin evidencia reproducible y comprobación de integridad posterior. Este objetivo no es una promesa comercial de rendimiento.
 
-* **PERF-01.1 — Target Base:** $\ge 250$ operaciones ACID de escritura por segundo sobre almacenamiento SSD NVMe en el hardware de referencia definido por el benchmark.
+## Fuera de la base y pendientes de especificación
 
-La aceptación del objetivo requiere que el benchmark documente como mínimo: hardware, sistema operativo, versión de Go, versión de SQLite/driver, tamaño de DB, tamaño de transacción, número de líneas por asiento, modo WAL, `busy_timeout`, duración, tasa de éxito/error, y percentiles de latencia.
+Multimoneda, reglas fiscales detalladas, facturación, conciliación, conectores SAT, anclaje externo específico, reapertura de períodos y administración de actualizaciones requieren contratos propios antes de desarrollarse. El mapa de contextos no los convierte en funciones aceptadas.
+
+También deben fijarse antes de publicar la API: límites de entrada, paginación, matriz exhaustiva de errores y mecanismo concreto de sesión/autenticación. No se deben completar estas decisiones mediante supuestos silenciosos.

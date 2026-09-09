@@ -1,67 +1,95 @@
-# DICTAMEN DE AUDITORÍA Y GUÍA TÉCNICA
-## Proyecto: Contable Fix by KLIK
-**Rol:** Auditor Técnico & Arquitecto de Software
-**Destinatario:** Equipo de Desarrollo Backend en Go
-**Fecha de Emisión:** 2026
+# FCOS v2.2 — Guía de auditoría técnica
 
----
+## 1. Naturaleza del documento
 
-### 1. REGLAS CONTABLES NO NEGOCIABLES (INVARIANTES DEL SISTEMA)
+Esta es una guía de evaluación, no un dictamen de aprobación. La revisión documental que la origina no inspeccionó implementación, ejecutó pruebas ni certificó seguridad o cumplimiento fiscal.
 
-1. **Invariante de Partida Doble:**
-   - Para todo comprobante o asiento contable (`JournalEntry`), la suma total de débitos DEBE ser idéntica a la suma total de créditos (`∑ Débitos == ∑ Créditos`).
-   - El sistema debe rechazar cualquier intento de contabilizar un asiento desbalanceado con `ErrUnbalancedJournal`.
+La auditoría técnica debe contrastar REQUIREMENTS, ARCHITECTURE, MAP y SECURITY contra una revisión identificable del código. Cualquier diferencia se registra como hallazgo; no se modifica el código automáticamente para coincidir con un dibujo o una ruta propuesta.
 
-2. **Inmutabilidad de Asientos Contabilizados:**
-   - Una vez que un asiento pasa al estado `CONTABILIZADO`, está terminantemente **PROHIBIDO** ejecutar sentencias `UPDATE` o `DELETE` sobre el asiento o sus líneas.
-   - Si se requiere corregir un error, se debe generar un asiento de reversión/anulación con contrapartida (`ReverseEntry()`), dejando trazabilidad del motivo y referencia al asiento original.
+## 2. Alcance y evidencia inicial
 
-3. **Restricción de Cuentas Auxiliares:**
-   - Las transacciones en las líneas del asiento (`JournalLine`) solo pueden asociarse a cuentas auxiliares que tengan `accepts_move = true`.
-   - Queda prohibido imputar movimientos a cuentas de nivel superior o mayorizadoras (Cuentas, Subcuentas no auxiliares).
+Registrar fecha, auditor, repositorio, commit, cambios locales, versiones de herramientas, sistema operativo, base utilizada y exclusiones. Trabajar con datos sintéticos y una base de prueba separada de la información real.
 
-4. **Precisión Numérica y Manejo Monetario:**
-   - Evitar `float64` para saldos acumulados en producción debido a errores de redondeo de punto flotante de IEEE 754.
-   - Recomendación: Utilizar la librería `github.com/shopspring/decimal` o enteros de centavos (`int64`), mapeados a columnas `NUMERIC(18, 4)` en PostgreSQL.
+Confirmar:
 
----
+- Ubicación efectiva del módulo Go, frontend, migraciones y configuración desktop.
+- Driver y pragmas reales de SQLite.
+- Superficies activas de Wails, HTTP, diagnóstico y workers.
+- Diferencias entre componentes implementados, parciales, previstos y ausentes.
+- Compatibilidad del formato monetario y de auditoría con datos o clientes existentes.
 
-### 2. HOJA DE RUTA DE IMPLEMENTACIÓN EN 4 FASES
+No ejecutar scripts desconocidos ni migraciones sobre una base del usuario como parte de una auditoría de lectura.
 
-#### FASE 1: Capa de Persistencia y Transaccionalidad
-- **Objetivo:** Implementar la interfaz de repositorios en `internal/repository` utilizando PostgreSQL (o base de datos relacional elegida).
-- **Entregables:**
-  - Migraciones DDL (`schema.sql`) para tablas `accounts`, `journal_entries`, `journal_lines`, `ledger_entries` y `audit_logs`.
-  - Soporte de transacciones atómicas `*sql.Tx`: la operación `PostEntry()` debe actualizar el asiento, insertar en el mayor y actualizar saldos dentro de la misma transacción.
+## 3. Revisión de arquitectura
 
-#### FASE 2: Lógica del Plan de Cuentas (`account_service.go`)
-- **Objetivo:** Garantizar la jerarquía del plan contable (Clase, Grupo, Cuenta, Subcuenta, Auxiliar).
-- **Entregables:**
-  - Validación de unicidad de códigos (`code`).
-  - Verificación de árbol: si una cuenta tiene hijos, no puede tener `accepts_move = true`.
-  - Algoritmo de desactivación: no permitir desactivar cuentas que posean saldo distinto de cero.
+Verificar que el dominio no dependa de transporte o SQL; que las reglas y autorización se ejecuten en backend; que los adaptadores utilicen la misma Unit of Work y que no existan llamadas externas dentro de las transacciones contables.
 
-#### FASE 3: Motor de Asientos y Libro Mayor (`journal_service.go` & `ledger_service.go`)
-- **Objetivo:** Ejecutar la lógica contable central.
-- **Entregables:**
-  - `CreateDraft`: Almacena el borrador validando que posea al menos dos líneas contables y cuentas válidas.
-  - `PostEntry`: Valida partida doble, transfiere movimientos a `LedgerRepository`, actualiza el saldo de cada cuenta y cambia el estado a `CONTABILIZADO`.
-  - `ReverseEntry`: Crea un nuevo asiento con los débitos y créditos invertidos y concepto de reversión.
-  - `GenerateTrialBalance`: Consulta el balance de comprobación sumas y saldos.
+Comprobar que la outbox se confirma junto con el evento origen y que sus consumidores admiten reintentos sin duplicar efectos.
 
-#### FASE 4: Capa de Entrega HTTP, Seguridad y Tests
-- **Objetivo:** Exponer endpoints REST robustos y protegidos.
-- **Entregables:**
-  - Middleware de autenticación y autorización por roles (Administrador, Contador, Auditor).
-  - Middleware de auditoría automática que alimente `internal/domain/audit.go` en cada operación de escritura.
-  - Suite de pruebas unitarias (`journal_service_test.go`, `validator_test.go`) con cobertura de casos de borde: desbalanceos de 0.01 centavos, periodos cerrados, cuentas bloqueadas.
+Revisar que el mapa refleje las responsabilidades reales. No exigir una reestructuración de directorios si la separación ya es verificable con otra organización.
 
----
+## 4. Matriz mínima de pruebas
 
-### 3. CHECKLIST DE APROBACIÓN DEL AUDITOR
+| Área | Casos exigidos | Evidencia |
+| --- | --- | --- |
+| Partida doble | Válido; desbalance de 1 centavo; cero; una línea; línea con ambos lados positivos; línea nula; negativos. | Resultado y ausencia de cambios al rechazar. |
+| Borradores | Guardado incompleto, edición y rechazo de edición tras contabilización. | Mayor y saldos intactos antes del posteo. |
+| Dinero | Frontera `int64`, acumulación fuera de rango, importes mayores al entero seguro JS, cadenas inválidas. | Exactitud de ida y vuelta; rechazo sin truncamiento. |
+| Cuentas | Duplicados por tenant, jerarquía cíclica, agrupadora, inactiva, saldo no cero al desactivar. | Restricciones y errores de dominio. |
+| Tenants | Lectura y escritura cruzadas, referencias de cuentas y reversión ajenas, selección de tenant manipulada. | Denegación sin fuga de datos. |
+| Inmutabilidad | UPDATE/DELETE por rutas normales; posteo repetido. | Original intacto y movimientos sin duplicación. |
+| Reversión | Motivo vacío, fecha cerrada, asiento no contabilizado, dos solicitudes simultáneas. | Un único contraasiento directo y atomicidad. |
+| Períodos | Fecha sin período, cerrado y carrera cierre/posteo. | Ninguna contabilización inválida confirmada. |
+| Transacciones | Fallo inyectado en mayor, saldo, estado, auditoría y outbox. | Rollback de todos los efectos asociados. |
+| Mayor y balance | Reconstrucción de saldo, filtros de fecha/tenant y sumas globales. | Igualdad exacta entre fuente y proyección. |
+| Auditoría | Primer bloque, secuencias de dos tenants, enlace alterado, payload alterado, checkpoint inválido. | Verificación determinista y rechazo. |
+| Restauración | Backup bajo actividad, recuperación y comparación con checkpoint independiente. | Integridad restaurada y límites de detección documentados. |
+| Autonomía | Red y proveedor externo caídos. | Contabilidad local disponible y outbox pendiente. |
+| Seguridad | Permisos, secretos en logs, diagnóstico en producción, clave no disponible. | Controles efectivos y fallos explícitos. |
 
-- [ ] Todas las funciones marcadas con `// TODO:` implementadas sin fallos de compilación (`go build`).
-- [ ] Validación de partida doble probada con test unitario exhaustivo.
-- [ ] Transacciones atómicas (rollback ante fallos parciales durante el posteo de asientos).
-- [ ] No existen sentencias `DELETE` o `UPDATE` destructivas en asientos contabilizados.
-- [ ] Pista de auditoría (`AuditLog`) registrando usuario, IP y timestamp en cada cambio.
+Las pruebas de repositorios en memoria no sustituyen las de integración con SQLite. La suite debe ejercitar conexiones concurrentes reales y la configuración efectiva de producción cuando corresponda.
+
+## 5. Comprobaciones de construcción
+
+Desde el módulo Go real:
+
+```powershell
+go test ./...
+go vet ./...
+```
+
+Añadir el detector de carreras cuando la plataforma lo soporte y los scripts reales de pruebas y build del frontend. Construir Wails desde su raíz configurada si el escritorio está incluido en el alcance.
+
+Registrar comando, entorno, resultado y revisión del código. Una prueba no ejecutada se marca “no verificada”; no se interpreta como aprobada. Compilar no acredita partida doble, seguridad ni rollback.
+
+## 6. Rendimiento
+
+Utilizar PERF-01 de REQUIREMENTS. Medir transacciones completas, incluir auditoría y comprobar integridad después de la carga. Informar errores y percentiles, no solo el mejor throughput observado.
+
+No declarar cumplido el objetivo si faltan datos para reproducirlo.
+
+## 7. Clasificación de hallazgos
+
+- **Crítico:** evidencia de pérdida o alteración financiera grave, extracción de secretos o acceso entre tenants de impacto inmediato.
+- **Alto:** incumplimiento de una invariante, atomicidad, autorización o contrato esencial con riesgo demostrado.
+- **Medio:** carencia que afecta operación, reproducibilidad o verificabilidad sin demostrar el impacto anterior.
+- **Bajo:** claridad, formato o mantenibilidad sin efecto funcional directo comprobado.
+
+La prioridad depende de evidencia y contexto. Una ambigüedad documental no demuestra una vulnerabilidad implementada.
+
+Cada hallazgo incluye archivo y línea, requisito afectado, observación, consecuencia, evidencia reproducible, recomendación y estado. No presentar hipótesis como hechos.
+
+## 8. Criterios de aceptación
+
+- [ ] Revisión y entorno identificados.
+- [ ] Invariantes financieras verificadas.
+- [ ] Aislamiento y autorización verificados en todos los transportes.
+- [ ] Rollback y concurrencia SQLite demostrados.
+- [ ] Contratos numéricos consistentes entre frontend, backend y auditoría.
+- [ ] Cadena, checkpoints y límites de confianza documentados y probados según alcance.
+- [ ] Restauración y custodia de claves evaluadas antes de producción.
+- [ ] Pruebas y construcción pertinentes aprobadas o exclusiones explicadas.
+- [ ] Hallazgos críticos y altos resueltos o explícitamente pendientes; no se emite aprobación plena mientras subsistan.
+- [ ] Documentación actualizada con el estado real, sin promesas no verificadas.
+
+El informe final debe separar resultados comprobados, riesgos abiertos y exclusiones. Debe indicar si evalúa solo documentos, un componente, el backend completo o una release del escritorio.
