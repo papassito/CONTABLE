@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { 
-  ShieldAlert, 
-  CheckSquare, 
-  Square, 
-  ListChecks, 
-  Clock, 
+import {
+  ShieldAlert,
+  CheckSquare,
+  Square,
+  ListChecks,
+  Clock,
   Scale
 } from 'lucide-react';
 
@@ -93,7 +93,7 @@ export const AuditView: React.FC = () => {
             </div>
             <h2 className="text-xl font-bold text-white">Directrices de Auditoría y Roadmap</h2>
             <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
-              Instrucciones técnicas formales para el desarrollador que completará el motor de <strong>Contable Fix by KLIK</strong>.
+              Instrucciones técnicas formales para el desarrollador que completará el motor de <strong>Contable Fix</strong>.
               Cumplimiento estricto de principios contables GAAP/NIIF y estándares de código en Go.
             </p>
           </div>
@@ -105,7 +105,7 @@ export const AuditView: React.FC = () => {
               <span className="text-xs text-slate-400">({progressPercent}%)</span>
             </div>
             <div className="w-32 bg-slate-800 h-1.5 rounded-full mt-2 overflow-hidden">
-              <div 
+              <div
                 className="bg-cyan-500 h-full transition-all duration-300"
                 style={{ width: `${progressPercent}%` }}
               />
@@ -167,14 +167,13 @@ export const AuditView: React.FC = () => {
           {AUDIT_CRITERIA.map((crit) => {
             const isChecked = !!completedItems[crit.id];
             return (
-              <div 
+              <div
                 key={crit.id}
                 onClick={() => toggleCheck(crit.id)}
-                className={`p-4 rounded-lg border transition-all cursor-pointer flex items-start space-x-3.5 ${
-                  isChecked 
-                    ? 'bg-slate-900/40 border-slate-800 text-slate-400' 
+                className={`p-4 rounded-lg border transition-all cursor-pointer flex items-start space-x-3.5 ${isChecked
+                    ? 'bg-slate-900/40 border-slate-800 text-slate-400'
                     : 'bg-slate-900 border-slate-800/90 hover:border-slate-700 text-slate-200'
-                }`}
+                  }`}
               >
                 <div className="mt-0.5 text-cyan-400 shrink-0">
                   {isChecked ? (
@@ -190,11 +189,10 @@ export const AuditView: React.FC = () => {
                       <span className={`text-xs font-bold ${isChecked ? 'line-through text-slate-400' : 'text-slate-100'}`}>
                         {crit.title}
                       </span>
-                      <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
-                        crit.priority === 'CRÍTICA' 
-                          ? 'bg-rose-950 text-rose-300 border border-rose-800/40' 
+                      <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${crit.priority === 'CRÍTICA'
+                          ? 'bg-rose-950 text-rose-300 border border-rose-800/40'
                           : 'bg-amber-950 text-amber-300 border border-amber-800/40'
-                      }`}>
+                        }`}>
                         {crit.priority}
                       </span>
                     </div>

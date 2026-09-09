@@ -2,7 +2,7 @@
 
 ## FCOS Kernel v2.2
 
-**Contable Fix by KLIK** es una plataforma contable profesional de escritorio construida alrededor de un **kernel contable transaccional en Go**.
+**Contable Fix** es una plataforma contable profesional de escritorio construida alrededor de un **kernel contable transaccional en Go**.
 
 El proyecto combina:
 
@@ -769,4 +769,4 @@ TESTED CONTINUOUSLY
 RELEASED REPRODUCIBLY
 ```
 
-**Contable Fix by KLIK**
+**Contable Fix**

@@ -19,18 +19,9 @@ Write-Host " 🚀 INICIANDO COMPILACIÓN LOCAL - Contable Fix FCOS v2.2  " -Fore
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 # Búsqueda inteligente del directorio del proyecto Go
-$goProjectDir = $null
 $scriptRoot = $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($scriptRoot)) { $scriptRoot = (Get-Location).Path }
-
-$possiblePaths = @(".", "go-skeleton", "go-contable", "contable-go", "GO-contable", "contable_go", "CONTABLE\go-skeleton")
-foreach ($path in $possiblePaths) {
-    $fullPath = Join-Path -Path $scriptRoot -ChildPath $path
-    if (Test-Path -Path (Join-Path -Path $fullPath -ChildPath "go.mod")) {
-        $goProjectDir = $fullPath
-        break
-    }
-}
+$goProjectDir = $scriptRoot
 
 if (-not $goProjectDir) {
     Write-Host "❌ Error: No se pudo encontrar el directorio del proyecto Go (con go.mod)." -ForegroundColor Red
@@ -79,96 +70,32 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "   ✅ Frontend instalado y compilado correctamente en .\dist" -ForegroundColor Green
 
 # --- FASE 2.5: ASEGURAR DEPENDENCIA DE WAILS ---
-Write-Host "`n🔧 2.5. Sincronizando dependencias del módulo Go y resolviendo go.sum..." -ForegroundColor Yellow
-$pushedDir = $false
-try {
-    Push-Location -Path $goProjectDir
-    $pushedDir = $true
-    
-    Write-Host "   - Ejecutando 'go mod tidy' para resolver dependencias directas e indirectas..." -ForegroundColor Cyan
-    go mod tidy
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Error durante 'go mod tidy'. Revisa los logs." -ForegroundColor Red
-        return 1
-    }
-    Write-Host "   ✅ Módulo sincronizado y go.sum actualizado con éxito." -ForegroundColor Green
-} finally {
-    if ($pushedDir) { Pop-Location }
-}
+Write-Host "`n🔧 2.5. Sincronizando dependencias y resolviendo go.sum..." -ForegroundColor Yellow
+go mod tidy
 
 # --- FASE 3: COMPILACIÓN CON WAILS ---
 Write-Host "`n🏗️  3. Compilando aplicación con Wails para windows/amd64..." -ForegroundColor Yellow
 
-# Wails es estricto: espera que go.mod y wails.json estén en el mismo directorio.
-# La solución más limpia es copiar wails.json al directorio de Go, ajustar su ruta de frontend,
-# compilar desde allí y luego limpiar.
-$originalWailsJsonPath = Join-Path -Path $scriptRoot -ChildPath "wails.json"
-$tempWailsJsonPath = Join-Path -Path $goProjectDir -ChildPath "wails.json"
-$targetDistPath = Join-Path -Path $goProjectDir -ChildPath "dist"
-$sourceDistPath = Join-Path -Path $scriptRoot -ChildPath "dist"
-$pushedDir = $false
 $buildSucceeded = $false
-
 try {
-    # Copiar temporalmente la carpeta dist dentro de go-skeleton para evadir restricción de embed en Go
-    if (Test-Path $targetDistPath) { Remove-Item -Path $targetDistPath -Recurse -Force }
-    Copy-Item -Path $sourceDistPath -Destination $targetDistPath -Recurse -Force
-
-    # Modificar y copiar wails.json
-    $wailsConfig = (Get-Content -Path $originalWailsJsonPath -Raw | ConvertFrom-Json)
-    $wailsConfig."frontend:dir" = ".." # Apuntar al directorio padre para el frontend
-    
-    # Ajustar rutas de bindings y assets para que apunten a la raíz desde el subdirectorio de Go
-    if ($wailsConfig.wailsjsdir) { $wailsConfig.wailsjsdir = "../" + $wailsConfig.wailsjsdir }
-    # Al copiar dist localmente, el assetdir para Wails pasa a ser relativo en go-skeleton
-    $wailsConfig.assetdir = "dist" 
-    $wailsConfig."build:dir" = "build" # Asegurar que el directorio de build sea relativo al directorio de Go
-    $wailsConfig | ConvertTo-Json -Depth 10 | Set-Content -Path $tempWailsJsonPath
-
-    # Navegar al directorio de Go y compilar
-    Push-Location -Path $goProjectDir
-    $pushedDir = $true
-
-    # Usamos -skipfrontend para compilar la aplicación Go con los assets estáticos que pre-copiamos
-    $buildArgs = @("-platform", "windows/amd64", "-clean", "-nsis", "-skipfrontend")
+    $buildArgs = @("-platform", "windows/amd64", "-clean", "-nsis")
     wails build $buildArgs
-    
     if ($LASTEXITCODE -ne 0) {
         Write-Host "❌ Error durante 'wails build'. Revisa los logs." -ForegroundColor Red
         return 1
     }
     $buildSucceeded = $true
-    Write-Host "   ✅ Aplicación compilada exitosamente en directorio temporal." -ForegroundColor Green
-
     Write-Host "   ✅ Aplicación compilada exitosamente." -ForegroundColor Green
 } finally {
-    # Limpiar sin importar el resultado
-    if ($pushedDir) { Pop-Location }
-    if (Test-Path $tempWailsJsonPath) {
-        Remove-Item -Path $tempWailsJsonPath -Force -ErrorAction SilentlyContinue
-    }
-    if (Test-Path $targetDistPath) {
-        Remove-Item -Path $targetDistPath -Recurse -Force -ErrorAction SilentlyContinue
-    }
-        # Recrear la carpeta 'dist' con un archivo placeholder permanente para evitar errores de //go:embed en el IDE
-        New-Item -ItemType Directory -Force -Path $targetDistPath | Out-Null
-        New-Item -ItemType File -Force -Path (Join-Path $targetDistPath "placeholder.txt") -Value "Placeholder to satisfy go:embed" | Out-Null
+    # Limpieza ya no requerida al convivir todo en la raíz contigua
 }
 
 # --- FASE 3.5: MOVER ARTEFACTOS DE COMPILACIÓN ---
-if ($buildSucceeded) {
-    Write-Host "`n🚚 3.5. Moviendo artefactos al directorio de compilación principal..." -ForegroundColor Yellow
-    $sourceBuildDir = Join-Path -Path $goProjectDir -ChildPath "build\bin"
-    $targetBuildDir = Join-Path -Path $scriptRoot -ChildPath "build\bin"
-    
-    if (-not (Test-Path $targetBuildDir)) { New-Item -Path $targetBuildDir -ItemType Directory -Force | Out-Null }
-    Move-Item -Path "$sourceBuildDir\*" -Destination $targetBuildDir -Force
-    Write-Host "   ✅ Artefactos movidos a '.\build\bin\'" -ForegroundColor Green
-}
+Write-Host "`n🚚 3.5. Artefactos listos en '.\build\bin\'" -ForegroundColor Green
 
 # --- FASE 4: FIRMA DIGITAL (OPCIONAL) ---
 Write-Host "`n✍️  4. Verificando firma digital (opcional)..." -ForegroundColor Yellow
-$executablePath = Join-Path -Path $scriptRoot -ChildPath "build\bin\ContableFixByKlik.exe"
+$executablePath = Join-Path -Path $scriptRoot -ChildPath "build\bin\ContableFix.exe"
 if (-not (Test-Path $executablePath)) {
     Write-Host "   ⚠️ No se encontró el ejecutable en '$executablePath'. Omitiendo firma." -ForegroundColor Yellow
 } elseif ($env:LOCAL_CERT_PATH -and $env:LOCAL_CERT_PASS) {

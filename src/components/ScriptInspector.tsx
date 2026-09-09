@@ -58,12 +58,7 @@ $highHogs = Get-Process | Sort-Object CPU -Descending | Select-Object -First 5`
 #>
 
 # 1. Determinar rutas candidatas donde puede habitar 'go.mod'
-$candidatePaths = @(
-    $basePath,
-    (Join-Path -Path $basePath -ChildPath "go-skeleton"),
-    (Join-Path -Path $basePath -ChildPath "CONTABLE\\go-skeleton"),
-    (Join-Path -Path $basePath -ChildPath "CONTABLE")
-)
+$projectDir = $basePath
 
 # 2. Eliminar el archivo duplicado y vacío config\\uow.go
 $uowFile = Join-Path -Path $projectDir -ChildPath "config\\uow.go"
@@ -89,7 +84,7 @@ $targetAnchor = Join-Path -Path $domainDir -ChildPath "anchor.go"
     Script de automatización para pruebas contables en Go y cobertura HTML.
 #>
 function Invoke-ContableTests {
-    # 1. Buscar go.mod en go-skeleton o go-contable
+    # 1. Buscar go.mod en Contable GO o go-contable
     # 2. Limpieza de coverage.out y coverage.html previos
     # 3. go test -v ./... @TestArgs
     # 4. Control estricto de $LASTEXITCODE
@@ -120,7 +115,8 @@ jobs:
       - run: wails build -platform windows/amd64 -clean -nsis
       - name: Firma Digital EV (signtool)
         run: |
-          & "C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.22621.0\\x64\\signtool.exe" sign ...`
+          $signtool = (Get-ChildItem -Path "C:\\Program Files (x86)\\Windows Kits" -Filter "signtool.exe" -Recurse | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+          & $signtool sign /f \${{ secrets.CERT_PATH }} /p \${{ secrets.CERT_PASS }} /tr http://timestamp.digicert.com /td sha256 /fd sha256 build\\bin\\ContableFix.exe`
   },
   {
     id: 'wails',
@@ -129,14 +125,14 @@ jobs:
     description: 'Configuración de Wails v2: Contable Fix FCOS v2.2.0, empaquetado con pnpm y salida NSIS.',
     code: `{
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "ContableFixByKlik",
-  "outputfilename": "ContableFixByKlik",
+  "name": "ContableFix",
+  "outputfilename": "ContableFix",
   "frontend:dir": "./",
   "frontend:install": "pnpm install",
   "frontend:build": "pnpm build",
   "frontend:dev:watcher": "pnpm dev",
   "info": {
-    "companyName": "Klik",
+    "companyName": "ContableFix",
     "productName": "Contable Fix FCOS",
     "productVersion": "2.2.0"
   },
@@ -185,11 +181,10 @@ export default function ScriptInspector() {
           <button
             key={script.id}
             onClick={() => setActiveTab(script.id)}
-            className={`px-4 py-2.5 font-mono whitespace-nowrap transition border-b-2 ${
-              activeTab === script.id
-                ? 'border-indigo-500 text-white bg-slate-800/40 font-medium'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
-            }`}
+            className={`px-4 py-2.5 font-mono whitespace-nowrap transition border-b-2 ${activeTab === script.id
+              ? 'border-indigo-500 text-white bg-slate-800/40 font-medium'
+              : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
+              }`}
           >
             {script.name}
           </button>

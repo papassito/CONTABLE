@@ -10,10 +10,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/klik/fcos-kernel/internal/domain"
-	"github.com/klik/fcos-kernel/internal/repository"
-	"github.com/klik/fcos-kernel/internal/service"
-	"github.com/klik/fcos-kernel/pkg/database"
+	"github.com/contable-fix/core/internal/domain"
+	"github.com/contable-fix/core/internal/repository"
+	"github.com/contable-fix/core/internal/service"
+	"github.com/contable-fix/core/pkg/database"
 	_ "modernc.org/sqlite"
 )
 
@@ -33,7 +33,7 @@ func NewApp() *App {
 	if err != nil {
 		dbDir = "."
 	}
-	appDir := filepath.Join(dbDir, "ContableFixByKlik")
+	appDir := filepath.Join(dbDir, "ContableFix")
 	if err := os.MkdirAll(appDir, 0755); err != nil {
 		log.Fatalf("Fallo crítico al crear el directorio de la base de datos: %v", err)
 	}

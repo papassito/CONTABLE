@@ -1,21 +1,21 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "ContableFixByKlik",
-  "outputfilename": "ContableFixByKlik",
+  "name": "ContableFix",
+  "outputfilename": "ContableFix",
   "frontend:dir": "./",
   "frontend:install": "pnpm install",
   "frontend:build": "pnpm build",
   "frontend:dev:watcher": "pnpm dev",
   "frontend:dev:serverUrl": "auto",
   "author": {
-    "name": "Klik",
-    "email": "soporte@klik.mx"
+    "name": "ContableFix",
+    "email": "soporte@contablefix.org"
   },
   "info": {
-    "companyName": "Klik",
+    "companyName": "ContableFix",
     "productName": "Contable Fix FCOS",
     "productVersion": "2.2.0",
-    "copyright": "Copyright © 2026 Klik. Todos los derechos reservados.",
+    "copyright": "Copyright © 2026 ContableFix. Todos los derechos reservados.",
     "comments": "Fiscal Compliance Operating System"
   },
   "wailsjsdir": "src/wailsjs",

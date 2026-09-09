@@ -5,7 +5,7 @@ export const forensicData: ForensicReport = {
     fecha_ejecucion_utc: "2026-09-06T16:30:28Z",
     sistema_operativo: "Microsoft Windows 11 Pro",
     arquitectura: "64 bits",
-    nombre_equipo: "CMSOLUCIONES"
+    nombre_equipo: "DEV-STATION-01"
   },
   evidencia_archivos: [
     {
@@ -67,8 +67,8 @@ export const auditItems: AuditItem[] = [
     severity: 'success',
     status: 'saneado',
     summary: 'Se eliminaron exitosamente los 8 archivos duplicados y desalineados introducidos por la subida.',
-    technicalDetails: 'Archivos eliminados: `,env-1.example`, `-1.gitignore`, `bun-1.lock`, `index-1.html`, `metadata-1.json`, `package-1.json`, `tsconfig-1.json` y `vite,config-1.ts`. El árbol de archivos ahora preserva la estructura canónica intacta.',
-    targetFiles: [',env-1.example', '-1.gitignore', 'bun-1.lock', 'index-1.html', 'package-1.json', 'tsconfig-1.json', 'vite,config-1.ts'],
+    technicalDetails: 'Archivos eliminados: `.env-1.example`, `-1.gitignore`, `bun-1.lock`, `index-1.html`, `metadata-1.json`, `package-1.json`, `tsconfig-1.json` y `vite.config-1.ts`. El árbol de archivos ahora preserva la estructura canónica intacta.',
+    targetFiles: ['.env-1.example', '-1.gitignore', 'bun-1.lock', 'index-1.html', 'package-1.json', 'tsconfig-1.json', 'vite.config-1.ts'],
     suggestedActionForCodeAssist: 'No requiere acción adicional. La integridad estructural del workspace quedó normalizada.'
   },
   {
@@ -77,7 +77,7 @@ export const auditItems: AuditItem[] = [
     title: 'Integridad del Módulo Go Verificada',
     severity: 'success',
     status: 'saneado',
-    summary: 'El módulo Go (`go-skeleton`) está presente, completo y pasa todas las pruebas y análisis estáticos (`go vet`).',
+    summary: 'El módulo Go está presente en la Raíz, completo y pasa todas las pruebas y análisis estáticos (`go vet`).',
     technicalDetails: 'Se ha verificado la presencia de `go.mod` y la estructura de paquetes de dominio. Los scripts de prueba (`run-tests.ps1`) y auditoría (`audit_fcos_anatomy.ps1`) se ejecutan correctamente, confirmando la salud del backend.',
     targetFiles: ['go.mod', 'run-tests.ps1', 'audit_fcos_anatomy.ps1'],
     suggestedActionForCodeAssist: 'No requiere acción. El backend de Go está en un estado saludable y validado.'
@@ -99,7 +99,7 @@ export const auditItems: AuditItem[] = [
     title: 'Auditoría Forense de Integridad del Sistema',
     severity: 'info',
     status: 'verificado',
-    summary: 'Evaluación del reporte forense emitido en la máquina CMSOLUCIONES (Windows 11 Pro).',
+    summary: 'Evaluación del reporte forense emitido en la máquina DEV-STATION-01 (Windows 11 Pro).',
     technicalDetails: 'Se auditaron los hashes SHA-256 de 6 archivos de red de Windows (hosts, hosts.ics, lmhosts.sam, networks, protocol, services). La modificación reciente en hosts (2026-08-27) y hosts.ics (2026-05-29) es congruente con entornos de desarrollo locales con resolución DNS local o Docker/Wsl.',
     targetFiles: ['informe_forense.json', 'Scanner-Agresivo.ps1'],
     suggestedActionForCodeAssist: 'Revisar si existen líneas no comentadas en C:\\Windows\\System32\\drivers\\etc\\hosts durante la ejecución de Scanner-Agresivo.ps1 paso 5/6.'
@@ -122,7 +122,7 @@ export const auditItems: AuditItem[] = [
     severity: 'info',
     status: 'verificado',
     summary: 'wails.json alineado con el empaquetador pnpm y salida NSIS.',
-    technicalDetails: 'Configuración: name: "ContableFixByKlik", version: "2.2.0", build: pnpm build, watcher: pnpm dev, wailsjsdir: "src/wailsjs", assetdir: "dist". La carpeta "src/wailsjs" aún no ha sido generada por el CLI de Wails.',
+    technicalDetails: 'Configuración: name: "ContableFix", version: "2.2.0", build: pnpm build, watcher: pnpm dev, wailsjsdir: "src/wailsjs", assetdir: "dist". La carpeta "src/wailsjs" aún no ha sido generada por el CLI de Wails.',
     targetFiles: ['wails.json', 'package.json'],
     suggestedActionForCodeAssist: 'Ejecutar `wails dev` o `wails generate module` en el entorno con Wails instalado para vincular los bindings TS de Go en `src/wailsjs`.'
   },
@@ -152,7 +152,7 @@ export const auditItems: AuditItem[] = [
 
 export const generateCodeAssistReportMarkdown = (): string => {
   return `# DICTAMEN DE AUDITORÍA AGRESIVA Y MILIMÉTRICA
-**Proyecto:** Contable Fix FCOS v2.2 (KLIK)  
+**Proyecto:** Contable Fix FCOS v2.2  
 **Fecha:** ${new Date().toISOString().split('T')[0]}  
 **Destinatario:** Code Assist / Equipo de Desarrollo  
 
@@ -160,20 +160,20 @@ export const generateCodeAssistReportMarkdown = (): string => {
 
 ### 1. SANEAMIENTO DE DUPLICADOS (RESUELTO ✅)
 - Se eliminaron con éxito los 8 archivos espurios y duplicados:
-  - \`,env-1.example\`
+  - \`.env-1.example\`
   - \`-1.gitignore\`
   - \`bun-1.lock\`
   - \`index-1.html\`
   - \`metadata-1.json\`
   - \`package-1.json\`
   - \`tsconfig-1.json\`
-  - \`vite,config-1.ts\`
+  - \`vite.config-1.ts\`
 - El árbol de configuración en la raíz se encuentra limpio y validado.
 
 ---
 
 ### 2. AUDITORÍA DEL BACKEND GO (RESUELTO ✅)
-- **Estado:** El módulo Go (\`go-skeleton\`) está presente, completo y validado.
+- **Estado:** El módulo Go reside en la Raíz del proyecto, completo y validado de forma nativa con Wails.
 - **Verificación:** Pasa con éxito las pruebas (\`run-tests.ps1\`) y los análisis estáticos (\`go vet\`, \`audit_fcos_anatomy.ps1\`).
 - **Arquitectura:** La estructura de dominio ha sido consolidada, eliminando archivos duplicados y resolviendo inconsistencias. El backend está en un estado saludable.
 
@@ -186,8 +186,8 @@ export const generateCodeAssistReportMarkdown = (): string => {
 
 ---
 
-### 4. INFORME FORENSE DEL SISTEMA (CMSOLUCIONES)
-- **Equipo:** Windows 11 Pro 64 bits (\`CMSOLUCIONES\`)
+### 4. INFORME FORENSE DEL SISTEMA (DEV-STATION-01)
+- **Equipo:** Windows 11 Pro 64 bits (\`DEV-STATION-01\`)
 - **Archivos verificados:** 6 archivos críticos en \`C:\\Windows\\System32\\drivers\\etc\\\` con sus hashes SHA-256 registrados.
 - **Scanner-Agresivo.ps1:** 6 rutinas de inspección (Defender, procesos anómalos en Temp/AppData, conexiones TCP salientes, claves Run de persistencia, integridad de HOSTS y procesos demandantes).
 `;

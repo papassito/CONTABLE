@@ -16,14 +16,14 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({ onSelectFile
               <FolderGit2 className="w-3.5 h-3.5" />
               <span>Arquitectura Modular en Go</span>
             </div>
-            <h2 className="text-xl font-bold text-white">Contable Fix by KLIK</h2>
+            <h2 className="text-xl font-bold text-white">Contable Fix</h2>
             <p className="text-sm text-slate-400 max-w-2xl leading-relaxed">
-              Esqueleto limpio, desacoplado y vacío listo para ser llenado con las reglas contables de la empresa.
+              Esqueleto limpio, desacoplado y vacío listo para ser llenado con las reglas contables.
               Sigue los principios de <strong className="text-slate-200">Clean Architecture / Puertos y Adaptadores</strong> para que el motor contable no dependa de ningún framework o base de datos específica.
             </p>
           </div>
           <div className="hidden md:flex flex-col items-end space-y-1 text-xs text-slate-400 font-mono">
-            <span className="bg-slate-800/80 px-2.5 py-1 rounded border border-slate-700/60 text-slate-300">Package: github.com/klik/contable-fix</span>
+            <span className="bg-slate-800/80 px-2.5 py-1 rounded border border-slate-700/60 text-slate-300">Package: github.com/contable-fix/core</span>
             <span className="text-cyan-400">Go 1.22+ Standard Library</span>
           </div>
         </div>
@@ -160,7 +160,7 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({ onSelectFile
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
         <div className="flex items-center space-x-2 text-slate-200 font-semibold text-sm">
           <ShieldCheck className="w-4 h-4 text-cyan-400" />
-          <span>Características del Esqueleto Go Diseñado para KLIK</span>
+          <span>Características del Esqueleto Go Diseñado para Contable Fix</span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
@@ -198,7 +198,7 @@ export const ArchitectureView: React.FC<ArchitectureViewProps> = ({ onSelectFile
         </div>
         <div className="p-3 bg-slate-950 rounded-lg border border-slate-800/80 font-mono text-xs text-slate-300 space-y-2">
           <div className="text-slate-400"># 1. Descomprimir el esqueleto o clonar la carpeta</div>
-          <div className="text-cyan-300">cd contable-fix-klik</div>
+          <div className="text-cyan-300">cd contable-fix</div>
           <div className="text-slate-400"># 2. Descargar o verificar dependencias del módulo</div>
           <div className="text-cyan-300">go mod tidy</div>
           <div className="text-slate-400"># 3. Compilar o ejecutar directamente el servidor</div>

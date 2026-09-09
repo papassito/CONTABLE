@@ -28,7 +28,7 @@ export default function Header() {
               </span>
             </div>
             <p className="text-xs text-slate-400 hidden sm:block">
-              Informe Técnico & Forense para Code Assist y Desarrollo KLIK
+              Informe Técnico & Forense para Code Assist y Desarrollo
             </p>
           </div>
         </div>

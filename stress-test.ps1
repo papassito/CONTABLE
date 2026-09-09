@@ -25,7 +25,7 @@ if (-not (Test-Path -Path $testRunnerScript)) {
 Write-Host "==================================================================" -ForegroundColor Red
 Write-Host " 💥 PRUEBA DE ROMPIMIENTO DE LÓGICA Y ESTRÉS - FCOS v2.2 KERNEL  " -ForegroundColor Red
 Write-Host "==================================================================" -ForegroundColor Red
-Write-Host "📁 Proyecto objetivo : C:\Users\CMSoluciones\Documents\GitHub\CONTABLE\go-skeleton"
+Write-Host "📁 Proyecto objetivo : Raíz del Repositorio ($scriptRoot)"
 Write-Host "🔄 Iteraciones      : $Iteraciones"
 Write-Host "⚡ Hilos Paralelos   : $Hilos`n"
 

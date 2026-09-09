@@ -13,23 +13,10 @@ param(
 
 # 1. Localización dinámica de la raíz del proyecto Go
 $scriptRoot = $PSScriptRoot
-if ([string]::IsNullOrWhiteSpace($scriptRoot)) {
-    $scriptRoot = (Get-Location).Path
-}
+$scriptRoot = $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($scriptRoot)) { $scriptRoot = (Get-Location).Path }
 
-$candidatePaths = @(
-    $scriptRoot,
-    (Join-Path -Path $scriptRoot -ChildPath "go-skeleton"),
-    (Join-Path -Path $scriptRoot -ChildPath "CONTABLE\go-skeleton")
-)
-
-$projectDir = $null
-foreach ($path in $candidatePaths) {
-    if (Test-Path -Path (Join-Path -Path $path -ChildPath "go.mod")) {
-        $projectDir = $path
-        break
-    }
-}
+$projectDir = $scriptRoot
 
 if (-not $projectDir) {
     Write-Host "❌ Error Crítico: No se encontró un módulo Go válido con 'go.mod'." -ForegroundColor Red

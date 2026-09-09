@@ -16,16 +16,7 @@ function Invoke-ContableTests {
     }
 
     # 1. Búsqueda inteligente del módulo
-    $possiblePaths = @(".", "go-skeleton", "go-contable", "contable-go", "GO-contable", "contable_go", "CONTABLE\go-skeleton")
-    $projectDir = $null
-
-    foreach ($path in $possiblePaths) {
-        $fullPath = Join-Path -Path $scriptRoot -ChildPath $path
-        if (Test-Path -Path (Join-Path -Path $fullPath -ChildPath "go.mod")) {
-            $projectDir = $fullPath
-            break
-        }
-    }
+    $projectDir = $scriptRoot
 
     if (-not $projectDir) {
         Write-Host "❌ Error: No se encontró 'go.mod' en '$scriptRoot' o sus subcarpetas." -ForegroundColor Red

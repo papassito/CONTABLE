@@ -12,9 +12,9 @@ interface Task {
 const tasks: Task[] = [
   {
     id: '1',
-    title: '1. Integrar el Módulo Go (go.mod)',
-    command: 'git clone https://github.com/papassito/CONTABLE.git temp_contable && cp -r temp_contable/go-skeleton ./go-skeleton && rm -rf temp_contable',
-    description: 'Los scripts reparar_y_probar.ps1 y run-tests.ps1 requieren la presencia de go.mod en la raíz o en go-skeleton.',
+    title: '1. Integrar el Módulo Go (Raíz)',
+    command: 'git clone https://github.com/contable-fix/core.git temp_contable && cp -r temp_contable/go-skeleton/* ./ && rm -rf temp_contable',
+    description: 'El espacio de trabajo unificado requiere que go.mod y wails.json convivan directamente en la raíz para un desarrollo fluido.',
     priority: 'ALTA'
   },
   {
@@ -65,7 +65,7 @@ export default function ActionChecklist() {
 
       <div className="space-y-3">
         {tasks.map(task => (
-          <div 
+          <div
             key={task.id}
             className="p-3.5 rounded-lg bg-slate-950/60 border border-slate-800/80 hover:border-slate-700/60 transition space-y-2"
           >
@@ -73,13 +73,12 @@ export default function ActionChecklist() {
               <span className="text-xs font-semibold text-white flex items-center gap-2">
                 {task.title}
               </span>
-              <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-medium ${
-                task.priority === 'ALTA' 
-                  ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' 
-                  : task.priority === 'MEDIA'
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-medium ${task.priority === 'ALTA'
+                ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                : task.priority === 'MEDIA'
                   ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                   : 'bg-slate-800 text-slate-400'
-              }`}>
+                }`}>
                 {task.priority}
               </span>
             </div>

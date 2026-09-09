@@ -23,7 +23,7 @@ export default function App() {
       <Header />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        
+
         {/* Top Notification Banner: Sanation Complete */}
         <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-950/40 via-slate-900 to-indigo-950/30 border border-emerald-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
           <div className="flex items-start sm:items-center gap-3">
@@ -97,7 +97,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-slate-800/80 bg-slate-950 py-6 text-center text-xs text-slate-500 font-mono">
-        <p>Contable Fix by KLIK • FCOS v2.2 • Auditoría Técnica y Diagnóstico Forense</p>
+        <p>Contable Fix • FCOS v2.2 • Auditoría Técnica y Diagnóstico Forense</p>
       </footer>
     </div>
   );

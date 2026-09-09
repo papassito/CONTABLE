@@ -12,14 +12,7 @@ param(
 )
 
 # 1. Localización dinámica del directorio del proyecto Go
-$candidateGoMod = Join-Path -Path $TargetDir -ChildPath "go-skeleton\go.mod"
-if (Test-Path -Path $candidateGoMod) {
-    $projectDir = Join-Path -Path $TargetDir -ChildPath "go-skeleton"
-} elseif (Test-Path -Path (Join-Path -Path $TargetDir -ChildPath "go.mod")) {
-    $projectDir = $TargetDir
-} else {
-    $projectDir = $TargetDir
-}
+$projectDir = $TargetDir
 
 Write-Host "==================================================================" -ForegroundColor Cyan
 Write-Host " 🧹 ELIMINADOR DE MARCAS DE ORDEN DE BYTES (UTF-8 BOM) - GO       " -ForegroundColor Cyan
