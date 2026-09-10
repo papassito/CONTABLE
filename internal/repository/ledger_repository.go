@@ -78,7 +78,7 @@ func (r *sqlLedgerRepository) GetTrialBalance(ctx context.Context, from, to time
 			GROUP BY account_id
 		)
 		SELECT
-			a.code, a.name, a.type,
+			a.code, a.name,
 			COALESCE(ib.total_debit, 0), COALESCE(ib.total_credit, 0),
 			COALESCE(pm.total_debit, 0), COALESCE(pm.total_credit, 0)
 		FROM accounts a
@@ -96,24 +96,17 @@ func (r *sqlLedgerRepository) GetTrialBalance(ctx context.Context, from, to time
 	var items []domain.TrialBalanceItem
 	for rows.Next() {
 		var item domain.TrialBalanceItem
-		var accType domain.AccountType
 		var initialDebit, initialCredit, periodDebit, periodCredit int64
 
-		if err := rows.Scan(&item.AccountCode, &item.AccountName, &accType, &initialDebit, &initialCredit, &periodDebit, &periodCredit); err != nil {
+		if err := rows.Scan(&item.AccountCode, &item.AccountName, &initialDebit, &initialCredit, &periodDebit, &periodCredit); err != nil {
 			return nil, err
 		}
 
 		item.TotalDebit = periodDebit
 		item.TotalCredit = periodCredit
 
-		switch accType {
-		case domain.AccountTypeActivo, domain.AccountTypeGasto, domain.AccountTypeCosto:
-			item.InitialBalance = initialDebit - initialCredit
-			item.FinalBalance = item.InitialBalance + item.TotalDebit - item.TotalCredit
-		case domain.AccountTypePasivo, domain.AccountTypePatrimonio, domain.AccountTypeIngreso:
-			item.InitialBalance = initialCredit - initialDebit
-			item.FinalBalance = item.InitialBalance + item.TotalCredit - item.TotalDebit
-		}
+		item.InitialBalance = initialDebit - initialCredit
+		item.FinalBalance = item.InitialBalance + item.TotalDebit - item.TotalCredit
 		items = append(items, item)
 	}
 	return items, nil

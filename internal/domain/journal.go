@@ -6,7 +6,6 @@ import (
 )
 
 var (
-	ErrUnbalancedJournal = errors.New("FCOS_ERR_JOURNAL: El asiento presenta un desbalance contable (Partida Doble fallida)")
 	ErrInvalidLinesCount = errors.New("FCOS_ERR_JOURNAL: Un asiento contable requiere al menos dos líneas para ser procesado")
 	ErrNegativeAmount    = errors.New("FCOS_ERR_JOURNAL: Queda prohibido inyectar montos negativos en el libro diario")
 	ErrDoubleSidedLine   = errors.New("FCOS_ERR_JOURNAL: Una línea debe afectar únicamente el debe o el haber, nunca ambos simultáneamente")

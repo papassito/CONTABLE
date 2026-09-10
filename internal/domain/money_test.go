@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"errors"
 	"math"
 	"testing"
 )
@@ -49,65 +50,166 @@ func TestCents_Desbordamiento(t *testing.T) {
 	}
 }
 
-func TestCents_SerializacionJSON(t *testing.T) {
-	monto := Cents(123456789) // $123,456.789 céntimos
-
-	// Serialización determinista a string
-	data, err := json.Marshal(monto)
-	if err != nil {
-		t.Fatalf("Error en serialización: %v", err)
+func TestCents_UnmarshalJSON_FormatosCanonicosValidos(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected Cents
+	}{
+		{
+			name:     "cero",
+			input:    `"0"`,
+			expected: 0,
+		},
+		{
+			name:     "positivo",
+			input:    `"12345"`,
+			expected: 12345,
+		},
+		{
+			name:     "negativo",
+			input:    `"-12345"`,
+			expected: -12345,
+		},
+		{
+			name:     "max int64",
+			input:    `"9223372036854775807"`,
+			expected: Cents(math.MaxInt64),
+		},
+		{
+			name:     "min int64",
+			input:    `"-9223372036854775808"`,
+			expected: Cents(math.MinInt64),
+		},
 	}
 
-	expectedJSON := `"123456789"`
-	if string(data) != expectedJSON {
-		t.Errorf("Se esperaba %s, obtenido %s", expectedJSON, string(data))
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got Cents
 
-	// Deserialización exitosa desde string
-	var resultado Cents
-	err = json.Unmarshal(data, &resultado)
-	if err != nil {
-		t.Fatalf("Error en deserialización: %v", err)
-	}
+			if err := json.Unmarshal([]byte(tt.input), &got); err != nil {
+				t.Fatalf("entrada válida %s rechazada: %v", tt.input, err)
+			}
 
-	if resultado != monto {
-		t.Errorf("Se esperaba recuperar %d, obtenido %d", monto, resultado)
+			if got != tt.expected {
+				t.Fatalf("esperado %d, obtenido %d", tt.expected, got)
+			}
+		})
 	}
 }
 
-func TestCents_DeserializacionFormatosNoCanonicos(t *testing.T) {
-	// Soporte robusto de deserialización ante entradas tipo número nativo en JSON.
-	rawNumJSON := []byte(`9999`)
-	var res Cents
-	if err := json.Unmarshal(rawNumJSON, &res); err != nil {
-		t.Fatalf("Error deserializando número crudo: %v", err)
-	}
-	if res != 9999 {
-		t.Errorf("Se esperaba 9999, obtenido %d", res)
+func TestCents_UnmarshalJSON_RechazaFormatosNoCanonicos(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"numero JSON crudo", `12345`},
+		{"numero JSON negativo crudo", `-12345`},
+		{"cero negativo", `"-0"`},
+		{"cero inicial", `"05"`},
+		{"cero inicial negativo", `"-05"`},
+		{"signo positivo", `"+5"`},
+		{"fraccion", `"12.34"`},
+		{"exponente minuscula", `"1e3"`},
+		{"exponente mayuscula", `"1E3"`},
+		{"espacio inicial", `" 12345"`},
+		{"espacio final", `"12345 "`},
+		{"espacios ambos", `" 12345 "`},
+		{"tabulador", `"\t12345"`},
+		{"salto de linea", `"12345\n"`},
+		{"vacio", `""`},
+		{"solo menos", `"-"`},
+		{"letras", `"abc"`},
+		{"separador coma", `"1,000"`},
+		{"separador underscore", `"1_000"`},
+		{"boolean", `true`},
+		{"null", `null`},
+		{"array", `["123"]`},
+		{"objeto", `{"value":"123"}`},
+
+		// Fuera de int64
+		{"overflow positivo", `"9223372036854775808"`},
+		{"overflow negativo", `"-9223372036854775809"`},
 	}
 
-	badJSON := []byte(`"texto_invalido"`)
-	if err := json.Unmarshal(badJSON, &res); err == nil {
-		t.Error("Se esperaba fallo por cadena no convertible a número")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got Cents
+
+			err := json.Unmarshal([]byte(tt.input), &got)
+
+			if !errors.Is(err, ErrInvalidFormat) {
+				t.Fatalf(
+					"entrada %s: esperado ErrInvalidFormat, obtenido %v",
+					tt.input,
+					err,
+				)
+			}
+		})
 	}
 }
 
-func TestCents_FormatosProhibidosNUM02(t *testing.T) {
-	// Casos de prueba que violan explícitamente la canonicidad del baseline normativo
-	prohibidos := []string{
-		`"05"`,    // Ceros iniciales positivos
-		`"-05"`,   // Ceros iniciales negativos
-		`"-0"`,    // Negativo nulo explícitamente prohibido por arquitectura
-		`"12.34"`, // Fracciones/Decimales en cadena
-		`"1e3"`,   // Exponentes
-		`" 100"`,  // Espacios internos iniciales
-		`"100 "`,  // Espacios internos finales
-		`""`,      // Vacío
+func TestCents_MarshalJSON_FormatoCanonico(t *testing.T) {
+	tests := []struct {
+		value    Cents
+		expected string
+	}{
+		{0, `"0"`},
+		{1, `"1"`},
+		{-1, `"-1"`},
+		{12345, `"12345"`},
+		{-12345, `"-12345"`},
+		{Cents(math.MaxInt64), `"9223372036854775807"`},
+		{Cents(math.MinInt64), `"-9223372036854775808"`},
 	}
-	for _, raw := range prohibidos {
-		var c Cents
-		if err := json.Unmarshal([]byte(raw), &c); err == nil {
-			t.Errorf("Se esperaba fallo de validación canónica NUM-02 para la entrada: %s", raw)
+
+	for _, tt := range tests {
+		data, err := json.Marshal(tt.value)
+		if err != nil {
+			t.Fatalf("Marshal(%d): %v", tt.value, err)
+		}
+
+		if string(data) != tt.expected {
+			t.Fatalf(
+				"Marshal(%d): esperado %s, obtenido %s",
+				tt.value,
+				tt.expected,
+				string(data),
+			)
+		}
+	}
+}
+
+func TestCents_JSON_RoundTripExacto(t *testing.T) {
+	values := []Cents{
+		0,
+		1,
+		-1,
+		100,
+		-100,
+		123456789,
+		Cents(math.MaxInt64),
+		Cents(math.MinInt64),
+	}
+
+	for _, original := range values {
+		data, err := json.Marshal(original)
+		if err != nil {
+			t.Fatalf("Marshal(%d): %v", original, err)
+		}
+
+		var recovered Cents
+
+		if err := json.Unmarshal(data, &recovered); err != nil {
+			t.Fatalf("Unmarshal(%d): %v", original, err)
+		}
+
+		if recovered != original {
+			t.Fatalf(
+				"round-trip alterado: original=%d recovered=%d",
+				original,
+				recovered,
+			)
 		}
 	}
 }

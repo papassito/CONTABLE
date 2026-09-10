@@ -5,14 +5,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
-
 	"github.com/gowebpki/jcs"
 	"github.com/klik/fcos-kernel/internal/domain"
 	"github.com/klik/fcos-kernel/internal/repository"
-	"github.com/klik/fcos-kernel/pkg/validator"
 )
 
 // UnitOfWork define el puerto para coordinar transacciones ACID.
@@ -20,10 +21,12 @@ type UnitOfWork interface {
 	Execute(ctx context.Context, fn func(ctx context.Context) error) error
 }
 
+// AuditService define el puerto para persistir eventos firmados criptográficamente.
 type AuditService interface {
 	AppendEvent(ctx context.Context, tenantID, eventType, actorID string, payload any) error
 }
 
+// JournalService define los casos de uso transaccionales del Libro Diario.
 type JournalService interface {
 	CreateDraft(ctx context.Context, entry *domain.JournalEntry) (*domain.JournalEntry, error)
 	PostEntry(ctx context.Context, entryID string) error
@@ -57,27 +60,38 @@ func NewJournalService(
 }
 
 func (s *journalService) CreateDraft(ctx context.Context, entry *domain.JournalEntry) (*domain.JournalEntry, error) {
-	if len(entry.Lines) < 2 {
-		return nil, domain.ErrEmptyJournalLines
+	tenantID, err := getTenantID(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	if !validator.ValidateDoubleEntry(entry.Lines) {
-		return nil, domain.ErrUnbalancedJournal
+	if entry.TenantID == "" {
+		return nil, ErrTenantRequired
 	}
 
-	// Validar que cada cuenta exista, esté activa y acepte movimientos
+	if entry.TenantID != tenantID {
+		return nil, ErrTenantMismatch
+	}
+
+	if err := entry.Validate(); err != nil {
+		return nil, err
+	}
+
 	accountsCache := make(map[string]*domain.Account)
 	for _, line := range entry.Lines {
 		account, ok := accountsCache[line.AccountID]
 		if !ok {
 			var err error
-			account, err = s.accountRepo.GetByID(ctx, line.AccountID)
+			account, err = s.accountRepo.GetByID(ctx, tenantID, line.AccountID)
 			if err != nil || account == nil {
 				return nil, domain.ErrAccountNotFound
 			}
+			if account.TenantID != tenantID {
+				return nil, ErrTenantMismatch
+			}
 			accountsCache[line.AccountID] = account
 		}
-		if account.Status != domain.AccountStatusActiva {
+		if account.Status != domain.AccountActive {
 			return nil, domain.ErrAccountInactive
 		}
 		if !account.AcceptsMove {
@@ -85,19 +99,10 @@ func (s *journalService) CreateDraft(ctx context.Context, entry *domain.JournalE
 		}
 	}
 
-	entry.Status = domain.EntryStatusBorrador
-
-	var totalDebit, totalCredit int64
-	for _, line := range entry.Lines {
-		totalDebit += line.Debit
-		totalCredit += line.Credit
-	}
-	entry.TotalDebit = totalDebit
-	entry.TotalCredit = totalCredit
+	entry.Status = domain.StatusDraft
 	entry.CreatedAt = time.Now()
-	entry.UpdatedAt = time.Now()
 
-	err := s.journalRepo.Create(ctx, entry)
+	err = s.journalRepo.Create(ctx, entry)
 	if err != nil {
 		return nil, err
 	}
@@ -106,8 +111,12 @@ func (s *journalService) CreateDraft(ctx context.Context, entry *domain.JournalE
 }
 
 func (s *journalService) PostEntry(ctx context.Context, entryID string) error {
+	tenantID, err := getTenantID(ctx)
+	if err != nil {
+		return err
+	}
+
 	return s.uow.Execute(ctx, func(txCtx context.Context) error {
-		// 1. Extraer y bloquear el asiento DENTRO de la transacción
 		entry, err := s.journalRepo.GetByID(txCtx, entryID)
 		if err != nil {
 			return err
@@ -115,11 +124,13 @@ func (s *journalService) PostEntry(ctx context.Context, entryID string) error {
 		if entry == nil {
 			return domain.ErrJournalNotFound
 		}
-		if entry.Status != domain.EntryStatusBorrador {
+		if entry.TenantID != tenantID {
+			return ErrTenantMismatch
+		}
+		if entry.Status != domain.StatusDraft {
 			return domain.ErrEntryAlreadyPosted
 		}
 
-		// 2. Extraer líneas DENTRO de la transacción
 		lines, err := s.journalRepo.GetLinesByEntryID(txCtx, entryID)
 		if err != nil {
 			return err
@@ -127,16 +138,23 @@ func (s *journalService) PostEntry(ctx context.Context, entryID string) error {
 		if len(lines) == 0 {
 			lines = entry.Lines
 		}
-		if len(lines) < 2 {
-			return domain.ErrEmptyJournalLines
-		}
-		if !validator.ValidateDoubleEntry(lines) {
-			return domain.ErrUnbalancedJournal
+
+		tempEntry := &domain.JournalEntry{Lines: lines}
+		if err := tempEntry.Validate(); err != nil {
+			return err
 		}
 
-		// 3. Validar Periodo
-		year, month, _ := entry.Date.Date()
-		status, err := s.journalRepo.CheckPeriodStatus(txCtx, year, int(month))
+		parts := strings.Split(entry.Date, "-")
+		if len(parts) != 3 {
+			return errors.New("FCOS_ERR_JOURNAL: formato de fecha contable inválido")
+		}
+		year, errY := strconv.Atoi(parts[0])
+		month, errM := strconv.Atoi(parts[1])
+		if errY != nil || errM != nil || month < 1 || month > 12 {
+			return errors.New("FCOS_ERR_JOURNAL: formato de fecha contable inválido")
+		}
+
+		status, err := s.journalRepo.CheckPeriodStatus(txCtx, year, month)
 		if err != nil {
 			return err
 		}
@@ -144,69 +162,82 @@ func (s *journalService) PostEntry(ctx context.Context, entryID string) error {
 			return domain.ErrClosedPeriod
 		}
 
-		// 4. Preparar movimientos y agrupar saldos en memoria (Evita N+1 queries)
+		entryDate, err := time.Parse("2006-01-02", entry.Date)
+		if err != nil {
+			return err
+		}
+
 		ledgerEntries := make([]domain.LedgerEntry, len(lines))
-		netBalances := make(map[string]int64)
+		netBalances := make(map[string]domain.Cents)
 		accountsCache := make(map[string]*domain.Account)
 
 		for i, line := range lines {
-			ledgerEntries[i] = domain.LedgerEntry{
-				AccountID:   line.AccountID,
-				AccountCode: line.AccountCode,
-				EntryDate:   entry.Date,
-				Debit:       line.Debit,
-				Credit:      line.Credit,
-				Reference:   entry.Number,
-			}
-
-			// Requerimos el tipo de cuenta para saber si suma o resta
 			account, ok := accountsCache[line.AccountID]
 			if !ok {
 				var err error
-				account, err = s.accountRepo.GetByID(txCtx, line.AccountID)
+				account, err = s.accountRepo.GetByID(txCtx, tenantID, line.AccountID)
 				if err != nil || account == nil {
 					return domain.ErrAccountNotFound
+				}
+				if account.TenantID != tenantID {
+					return ErrTenantMismatch
+				}
+				if account.Status != domain.AccountActive {
+					return domain.ErrAccountInactive
+				}
+				if !account.AcceptsMove {
+					return domain.ErrAccountHasChildren
 				}
 				accountsCache[line.AccountID] = account
 			}
 
-			var amount int64
-			switch account.Type {
-			case domain.AccountTypeActivo, domain.AccountTypeGasto, domain.AccountTypeCosto:
-				amount = line.Debit - line.Credit
-			case domain.AccountTypePasivo, domain.AccountTypePatrimonio, domain.AccountTypeIngreso:
-				amount = line.Credit - line.Debit
-			default:
-				amount = line.Debit - line.Credit
+			ledgerEntries[i] = domain.LedgerEntry{
+				AccountID:   line.AccountID,
+				AccountCode: account.Code,
+				EntryDate:   entryDate,
+				Debit:       int64(line.Debit),
+				Credit:      int64(line.Credit),
+				Reference:   entry.Number,
 			}
-			netBalances[line.AccountID] += amount
+
+			delta, errSub := line.Debit.Sub(line.Credit)
+			if errSub != nil {
+				return errSub
+			}
+			var errAdd error
+			netBalances[line.AccountID], errAdd = netBalances[line.AccountID].Add(delta)
+			if errAdd != nil {
+				return errAdd
+			}
 		}
 
-		// 5. Impactar base de datos en bloque
 		if err = s.ledgerRepo.RecordMovements(txCtx, ledgerEntries); err != nil {
 			return err
 		}
 
 		for accountID, netAmount := range netBalances {
 			if netAmount != 0 { // Solo actualiza si hubo impacto neto real
-				if err = s.accountRepo.UpdateBalance(txCtx, accountID, netAmount); err != nil {
+				if err = s.accountRepo.UpdateBalance(txCtx, tenantID, accountID, netAmount); err != nil {
 					return err
 				}
 			}
 		}
 
-		if err = s.journalRepo.UpdateStatus(txCtx, entryID, domain.EntryStatusContabilizado); err != nil {
+		if err = s.journalRepo.UpdateStatus(txCtx, entryID, domain.StatusPosted); err != nil {
 			return err
 		}
 
-		// 6. Auditoría inmutable
 		if s.auditSvc != nil {
+			var totalDebit int64
+			for _, line := range lines {
+				totalDebit += int64(line.Debit)
+			}
 			auditPayload := map[string]any{
 				"entry_id":    entry.ID,
 				"number":      entry.Number,
-				"total_debit": entry.TotalDebit,
+				"total_debit": totalDebit,
 				"posted_at":   time.Now().UTC().Format(time.RFC3339),
-				"status":      string(domain.EntryStatusContabilizado),
+				"status":      string(domain.StatusPosted),
 			}
 			canonicalHash, err := computeCanonicalHash(auditPayload)
 			if err != nil {
@@ -214,7 +245,7 @@ func (s *journalService) PostEntry(ctx context.Context, entryID string) error {
 			}
 			auditPayload["canonical_hash"] = canonicalHash
 
-			if err = s.auditSvc.AppendEvent(txCtx, "default-tenant", "POST_CONTABILIZAR", "system-user", auditPayload); err != nil {
+			if err = s.auditSvc.AppendEvent(txCtx, tenantID, "POST_CONTABILIZAR", "system-user", auditPayload); err != nil {
 				return err
 			}
 		}
@@ -223,14 +254,22 @@ func (s *journalService) PostEntry(ctx context.Context, entryID string) error {
 }
 
 func (s *journalService) ReverseEntry(ctx context.Context, entryID string, reason string) (*domain.JournalEntry, error) {
+	tenantID, err := getTenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var reversedEntry *domain.JournalEntry
-	err := s.uow.Execute(ctx, func(txCtx context.Context) error {
+	err = s.uow.Execute(ctx, func(txCtx context.Context) error {
 		original, err := s.journalRepo.GetByID(txCtx, entryID)
 		if err != nil {
 			return err
 		}
 		if original == nil {
 			return domain.ErrJournalNotFound
+		}
+		if original.TenantID != tenantID {
+			return ErrTenantMismatch
 		}
 
 		originalLines, err := s.journalRepo.GetLinesByEntryID(txCtx, entryID)
@@ -244,27 +283,23 @@ func (s *journalService) ReverseEntry(ctx context.Context, entryID string, reaso
 		reversedLines := make([]domain.JournalLine, len(originalLines))
 		for i, line := range originalLines {
 			reversedLines[i] = domain.JournalLine{
-				AccountID:    line.AccountID,
-				AccountCode:  line.AccountCode,
-				Description:  "Reversión: " + line.Description,
-				Debit:        line.Credit,
-				Credit:       line.Debit,
-				ThirdPartyID: line.ThirdPartyID,
+				AccountID:   line.AccountID,
+				Description: "Reversión: " + line.Description,
+				Debit:       line.Credit,
+				Credit:      line.Debit,
 			}
 		}
 
 		reversedEntry = &domain.JournalEntry{
-			ID:          uuid.New().String(),
-			Number:      "REV-" + original.Number,
-			Date:        time.Now(),
-			Concept:     "Reversión de " + original.Number + " - Motivo: " + reason,
-			Reference:   original.Number,
-			Status:      domain.EntryStatusBorrador,
-			Lines:       reversedLines,
-			TotalDebit:  original.TotalCredit,
-			TotalCredit: original.TotalDebit,
-			CreatedAt:   time.Now(),
-			UpdatedAt:   time.Now(),
+			ID:           uuid.New().String(),
+			TenantID:     tenantID,
+			Number:       "REV-" + original.Number,
+			Date:         time.Now().Format("2006-01-02"),
+			Concept:      "Reversión de " + original.Number + " - Motivo: " + reason,
+			Status:       domain.StatusDraft,
+			Lines:        reversedLines,
+			CreatedAt:    time.Now(),
+			ReversalOfID: original.ID,
 		}
 
 		err = s.journalRepo.Create(txCtx, reversedEntry)
@@ -272,13 +307,17 @@ func (s *journalService) ReverseEntry(ctx context.Context, entryID string, reaso
 			return err
 		}
 
-		// Generar y emitir evento de auditoría canónico bajo RFC 8785
+		var totalDebit int64
+		for _, line := range reversedLines {
+			totalDebit += int64(line.Debit)
+		}
+
 		auditPayload := map[string]any{
 			"original_entry_id": original.ID,
 			"reversed_entry_id": reversedEntry.ID,
 			"reason":            reason,
 			"reversed_at":       time.Now().UTC().Format(time.RFC3339),
-			"status":            string(domain.EntryStatusBorrador),
+			"status":            string(domain.StatusDraft),
 		}
 		canonicalHash, err := computeCanonicalHash(auditPayload)
 		if err != nil {
@@ -287,7 +326,7 @@ func (s *journalService) ReverseEntry(ctx context.Context, entryID string, reaso
 		auditPayload["canonical_hash"] = canonicalHash
 
 		if s.auditSvc != nil {
-			err = s.auditSvc.AppendEvent(txCtx, "default-tenant", "VOID_ANULAR", "system-user", auditPayload)
+			err = s.auditSvc.AppendEvent(txCtx, tenantID, "VOID_ANULAR", "system-user", auditPayload)
 			if err != nil {
 				return err
 			}
@@ -303,12 +342,20 @@ func (s *journalService) ReverseEntry(ctx context.Context, entryID string, reaso
 }
 
 func (s *journalService) GetEntry(ctx context.Context, id string) (*domain.JournalEntry, error) {
+	tenantID, err := getTenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	entry, err := s.journalRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	if entry == nil {
 		return nil, nil
+	}
+	if entry.TenantID != tenantID {
+		return nil, ErrTenantMismatch
 	}
 	lines, err := s.journalRepo.GetLinesByEntryID(ctx, id)
 	if err != nil {
@@ -319,7 +366,21 @@ func (s *journalService) GetEntry(ctx context.Context, id string) (*domain.Journ
 }
 
 func (s *journalService) ListEntries(ctx context.Context, filter map[string]interface{}) ([]*domain.JournalEntry, error) {
-	return s.journalRepo.List(ctx, filter)
+	tenantID, err := getTenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := s.journalRepo.List(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	var filtered []*domain.JournalEntry
+	for _, e := range entries {
+		if e.TenantID == tenantID {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered, nil
 }
 
 func computeCanonicalHash(payload any) (string, error) {

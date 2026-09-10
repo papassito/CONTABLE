@@ -21,10 +21,13 @@ func TestMVPEndToEndSmoke(t *testing.T) {
 	}
 	defer db.Close()
 
-	ctx := context.Background()
+	tenantID := "default-tenant"
+	ctx, err := service.WithTenantID(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("tenant context inválido: %v", err)
+	}
 
 	// 2. Preparar el Tenant de Producción
-	tenantID := "default-tenant"
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO tenant_tenants (id, code, legal_name, status, created_at_utc)
 		VALUES (?, 'TENANT_MVP', 'Klik Contable MVP Tenant', 'ACTIVE', ?)`,
@@ -48,13 +51,12 @@ func TestMVPEndToEndSmoke(t *testing.T) {
 	accCajaID := uuid.New().String()
 	accCaja := &domain.Account{
 		ID:          accCajaID,
+		TenantID:    tenantID,
 		Code:        "11050501",
 		Name:        "Caja General MVP",
-		Type:        domain.AccountTypeActivo,
-		Status:      domain.AccountStatusActiva,
+		Status:      domain.AccountActive,
 		AcceptsMove: true,
-		CurrentBal:  0,
-		CreatedAt:   time.Now(),
+		Balance:     0,
 	}
 	if err := accountSvc.CreateAccount(ctx, accCaja); err != nil {
 		t.Fatalf("Fallo al crear cuenta Caja: %v", err)
@@ -64,13 +66,12 @@ func TestMVPEndToEndSmoke(t *testing.T) {
 	accCapitalID := uuid.New().String()
 	accCapital := &domain.Account{
 		ID:          accCapitalID,
+		TenantID:    tenantID,
 		Code:        "31050501",
 		Name:        "Capital Suscrito MVP",
-		Type:        domain.AccountTypePatrimonio,
-		Status:      domain.AccountStatusActiva,
+		Status:      domain.AccountActive,
 		AcceptsMove: true,
-		CurrentBal:  0,
-		CreatedAt:   time.Now(),
+		Balance:     0,
 	}
 	if err := accountSvc.CreateAccount(ctx, accCapital); err != nil {
 		t.Fatalf("Fallo al crear cuenta Capital: %v", err)
@@ -79,21 +80,19 @@ func TestMVPEndToEndSmoke(t *testing.T) {
 	// 5. Crear un Asiento en Borrador (Draft) equilibrado
 	entryID := uuid.New().String()
 	entry := &domain.JournalEntry{
-		ID:        entryID,
-		Number:    "ASE-0001",
-		Date:      time.Now(),
-		Concept:   "Aportación Inicial de Socios MVP",
-		Reference: "SOCIOS-01",
+		ID:       entryID,
+		TenantID: tenantID,
+		Number:   "ASE-0001",
+		Date:     time.Now().Format("2006-01-02"),
+		Concept:  "Aportación Inicial de Socios MVP",
 		Lines: []domain.JournalLine{
 			{
-				ID:          uuid.New().String(),
 				AccountID:   accCajaID,
 				Description: "Ingreso en Caja",
 				Debit:       5000000, // $50,000.00 pesos (en centavos)
 				Credit:      0,
 			},
 			{
-				ID:          uuid.New().String(),
 				AccountID:   accCapitalID,
 				Description: "Capitalización Inicial",
 				Debit:       0,
@@ -107,7 +106,7 @@ func TestMVPEndToEndSmoke(t *testing.T) {
 		t.Fatalf("Fallo al crear Borrador del asiento: %v", err)
 	}
 
-	if draft.Status != domain.EntryStatusBorrador {
+	if draft.Status != domain.StatusDraft {
 		t.Fatalf("Se esperaba estado BORRADOR, obtenido: %s", draft.Status)
 	}
 
@@ -122,11 +121,11 @@ func TestMVPEndToEndSmoke(t *testing.T) {
 	cajaPost, _ := accountSvc.GetAccount(ctx, accCajaID)
 	capitalPost, _ := accountSvc.GetAccount(ctx, accCapitalID)
 
-	if cajaPost.CurrentBal != 5000000 {
-		t.Errorf("Balance incorrecto en Caja. Esperado: 5000000, Obtenido: %d", cajaPost.CurrentBal)
+	if cajaPost.Balance != 5000000 {
+		t.Errorf("Balance incorrecto en Caja. Esperado: 5000000, Obtenido: %d", cajaPost.Balance)
 	}
-	if capitalPost.CurrentBal != 5000000 {
-		t.Errorf("Balance incorrecto en Capital. Esperado: 5000000, Obtenido: %d", capitalPost.CurrentBal)
+	if capitalPost.Balance != 5000000 {
+		t.Errorf("Balance incorrecto en Capital. Esperado: 5000000, Obtenido: %d", capitalPost.Balance)
 	}
 
 	// B) Verificar integridad del audit log en audit_events (0% Simulación, Criptografía Activa)

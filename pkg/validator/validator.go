@@ -5,10 +5,19 @@ import (
 )
 
 func ValidateDoubleEntry(lines []domain.JournalLine) bool {
-	var totalDebit, totalCredit int64
+	var totalDebit domain.Cents
+	var totalCredit domain.Cents
+	var err error
+
 	for _, line := range lines {
-		totalDebit += line.Debit
-		totalCredit += line.Credit
+		totalDebit, err = totalDebit.Add(line.Debit)
+		if err != nil {
+			return false
+		}
+		totalCredit, err = totalCredit.Add(line.Credit)
+		if err != nil {
+			return false
+		}
 	}
 	return totalDebit == totalCredit
 }

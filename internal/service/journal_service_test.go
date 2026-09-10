@@ -42,7 +42,7 @@ func (m *mockJournalRepo) List(ctx context.Context, filter map[string]interface{
 }
 func (m *mockJournalRepo) UpdateStatus(ctx context.Context, id string, status domain.EntryStatus) error {
 	if e, ok := m.entries[id]; ok {
-		e.Status = status
+		e.Status = domain.EntryStatus(status)
 		return nil
 	}
 	return errors.New("not found")
@@ -65,35 +65,46 @@ func (m *mockAccountRepo) Create(ctx context.Context, account *domain.Account) e
 	m.accounts[account.ID] = account
 	return nil
 }
-func (m *mockAccountRepo) GetByID(ctx context.Context, id string) (*domain.Account, error) {
-	return m.accounts[id], nil
+func (m *mockAccountRepo) GetByID(ctx context.Context, tenantID, id string) (*domain.Account, error) {
+	acc, ok := m.accounts[id]
+	if !ok {
+		return nil, nil
+	}
+	if acc.TenantID != tenantID {
+		return nil, errors.New("tenant mismatch")
+	}
+	return acc, nil
 }
-func (m *mockAccountRepo) GetByCode(ctx context.Context, code string) (*domain.Account, error) {
+func (m *mockAccountRepo) GetByCode(ctx context.Context, tenantID, code string) (*domain.Account, error) {
 	for _, a := range m.accounts {
 		if a.Code == code {
+			if a.TenantID != tenantID {
+				return nil, errors.New("tenant mismatch")
+			}
 			return a, nil
 		}
 	}
 	return nil, nil
 }
-func (m *mockAccountRepo) List(ctx context.Context, filter map[string]interface{}) ([]*domain.Account, error) {
+func (m *mockAccountRepo) List(ctx context.Context, tenantID string) ([]*domain.Account, error) {
 	var list []*domain.Account
 	for _, a := range m.accounts {
-		list = append(list, a)
+		if a.TenantID == tenantID {
+			list = append(list, a)
+		}
 	}
 	return list, nil
 }
-func (m *mockAccountRepo) Update(ctx context.Context, account *domain.Account) error {
-	m.accounts[account.ID] = account
-	return nil
-}
-func (m *mockAccountRepo) Delete(ctx context.Context, id string) error {
-	delete(m.accounts, id)
-	return nil
-}
-func (m *mockAccountRepo) UpdateBalance(ctx context.Context, id string, amount int64) error {
+func (m *mockAccountRepo) UpdateBalance(ctx context.Context, tenantID, id string, delta domain.Cents) error {
 	if a, ok := m.accounts[id]; ok {
-		a.CurrentBal += amount
+		if a.TenantID != tenantID {
+			return errors.New("tenant mismatch")
+		}
+		newBal, err := a.Balance.Add(delta)
+		if err != nil {
+			return err
+		}
+		a.Balance = newBal
 		return nil
 	}
 	return errors.New("not found")
@@ -159,26 +170,33 @@ func TestCreateDraft_Balanced(t *testing.T) {
 	uow := &mockUOW{}
 	audit := &mockAuditService{}
 
+	tenantID := "tenant-alpha"
+	ctx, err := service.WithTenantID(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("error context: %v", err)
+	}
+
 	// Configurar cuentas de prueba auxiliares activas
-	aRepo.accounts["1"] = &domain.Account{ID: "1", Code: "110505", Status: domain.AccountStatusActiva, AcceptsMove: true}
-	aRepo.accounts["2"] = &domain.Account{ID: "2", Code: "210505", Status: domain.AccountStatusActiva, AcceptsMove: true}
+	aRepo.accounts["1"] = &domain.Account{ID: "1", TenantID: tenantID, Code: "110505", Status: domain.AccountActive, AcceptsMove: true}
+	aRepo.accounts["2"] = &domain.Account{ID: "2", TenantID: tenantID, Code: "210505", Status: domain.AccountActive, AcceptsMove: true}
 
 	svc := service.NewJournalService(jRepo, aRepo, lRepo, uow, audit)
 
 	entry := &domain.JournalEntry{
-		ID:     "entry-1",
-		Number: "001",
+		ID:       "entry-1",
+		TenantID: tenantID,
+		Number:   "001",
 		Lines: []domain.JournalLine{
 			{AccountID: "1", Debit: 1000, Credit: 0},
 			{AccountID: "2", Debit: 0, Credit: 1000},
 		},
 	}
 
-	res, err := svc.CreateDraft(context.Background(), entry)
+	res, err := svc.CreateDraft(ctx, entry)
 	if err != nil {
 		t.Fatalf("Error inesperado en CreateDraft: %v", err)
 	}
-	if res.Status != domain.EntryStatusBorrador {
+	if res.Status != domain.StatusDraft {
 		t.Errorf("Se esperaba estado BORRADOR, obtenido %s", res.Status)
 	}
 }
@@ -190,18 +208,25 @@ func TestCreateDraft_Unbalanced(t *testing.T) {
 	uow := &mockUOW{}
 	audit := &mockAuditService{}
 
+	tenantID := "tenant-alpha"
+	ctx, err := service.WithTenantID(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
 	svc := service.NewJournalService(jRepo, aRepo, lRepo, uow, audit)
 
 	entry := &domain.JournalEntry{
-		ID:     "entry-1",
-		Number: "001",
+		ID:       "entry-1",
+		TenantID: tenantID,
+		Number:   "001",
 		Lines: []domain.JournalLine{
 			{AccountID: "1", Debit: 1000, Credit: 0},
 			{AccountID: "2", Debit: 0, Credit: 999}, // Diferencia de un centavo
 		},
 	}
 
-	_, err := svc.CreateDraft(context.Background(), entry)
+	_, err = svc.CreateDraft(ctx, entry)
 	if !errors.Is(err, domain.ErrUnbalancedJournal) {
 		t.Errorf("Se esperaba ErrUnbalancedJournal, obtenido %v", err)
 	}
@@ -214,16 +239,23 @@ func TestPostEntry_AlreadyPosted(t *testing.T) {
 	uow := &mockUOW{}
 	audit := &mockAuditService{}
 
+	tenantID := "tenant-alpha"
+	ctx, err := service.WithTenantID(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
 	entry := &domain.JournalEntry{
-		ID:     "entry-1",
-		Number: "001",
-		Status: domain.EntryStatusContabilizado,
+		ID:       "entry-1",
+		TenantID: tenantID,
+		Number:   "001",
+		Status:   domain.StatusPosted,
 	}
 	jRepo.entries["entry-1"] = entry
 
 	svc := service.NewJournalService(jRepo, aRepo, lRepo, uow, audit)
 
-	err := svc.PostEntry(context.Background(), "entry-1")
+	err = svc.PostEntry(ctx, "entry-1")
 	if !errors.Is(err, domain.ErrEntryAlreadyPosted) {
 		t.Errorf("Se esperaba ErrEntryAlreadyPosted, obtenido %v", err)
 	}
@@ -236,11 +268,18 @@ func TestPostEntry_ClosedPeriod(t *testing.T) {
 	uow := &mockUOW{}
 	audit := &mockAuditService{}
 
+	tenantID := "tenant-alpha"
+	ctx, err := service.WithTenantID(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
 	entry := &domain.JournalEntry{
-		ID:     "entry-1",
-		Number: "001",
-		Date:   time.Now(),
-		Status: domain.EntryStatusBorrador,
+		ID:       "entry-1",
+		TenantID: tenantID,
+		Number:   "001",
+		Date:     time.Now().Format("2006-01-02"),
+		Status:   domain.StatusDraft,
 		Lines: []domain.JournalLine{
 			{AccountID: "1", Debit: 1000, Credit: 0},
 			{AccountID: "2", Debit: 0, Credit: 1000},
@@ -251,7 +290,7 @@ func TestPostEntry_ClosedPeriod(t *testing.T) {
 
 	svc := service.NewJournalService(jRepo, aRepo, lRepo, uow, audit)
 
-	err := svc.PostEntry(context.Background(), "entry-1")
+	err = svc.PostEntry(ctx, "entry-1")
 	if !errors.Is(err, domain.ErrClosedPeriod) {
 		t.Errorf("Se esperaba ErrClosedPeriod, obtenido %v", err)
 	}
@@ -264,11 +303,18 @@ func TestPostEntry_RollbackOnLedgerError(t *testing.T) {
 	uow := &mockUOW{}
 	audit := &mockAuditService{}
 
+	tenantID := "tenant-alpha"
+	ctx, err := service.WithTenantID(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
 	entry := &domain.JournalEntry{
-		ID:     "entry-1",
-		Number: "001",
-		Date:   time.Now(),
-		Status: domain.EntryStatusBorrador,
+		ID:       "entry-1",
+		TenantID: tenantID,
+		Number:   "001",
+		Date:     time.Now().Format("2006-01-02"),
+		Status:   domain.StatusDraft,
 		Lines: []domain.JournalLine{
 			{AccountID: "1", Debit: 1000, Credit: 0},
 			{AccountID: "2", Debit: 0, Credit: 1000},
@@ -277,12 +323,12 @@ func TestPostEntry_RollbackOnLedgerError(t *testing.T) {
 	jRepo.entries["entry-1"] = entry
 
 	// Configurar cuentas auxiliares activas
-	aRepo.accounts["1"] = &domain.Account{ID: "1", Code: "110505", Status: domain.AccountStatusActiva, AcceptsMove: true}
-	aRepo.accounts["2"] = &domain.Account{ID: "2", Code: "210505", Status: domain.AccountStatusActiva, AcceptsMove: true}
+	aRepo.accounts["1"] = &domain.Account{ID: "1", TenantID: tenantID, Code: "110505", Status: domain.AccountActive, AcceptsMove: true}
+	aRepo.accounts["2"] = &domain.Account{ID: "2", TenantID: tenantID, Code: "210505", Status: domain.AccountActive, AcceptsMove: true}
 
 	svc := service.NewJournalService(jRepo, aRepo, lRepo, uow, audit)
 
-	err := svc.PostEntry(context.Background(), "entry-1")
+	err = svc.PostEntry(ctx, "entry-1")
 	if err == nil {
 		t.Fatal("Se esperaba error al fallar RecordMovements")
 	}
@@ -298,11 +344,18 @@ func TestPostEntry_RollbackOnBalanceUpdateError(t *testing.T) {
 	uow := &mockUOW{}
 	audit := &mockAuditService{}
 
+	tenantID := "tenant-alpha"
+	ctx, err := service.WithTenantID(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
 	entry := &domain.JournalEntry{
-		ID:     "entry-1",
-		Number: "001",
-		Date:   time.Now(),
-		Status: domain.EntryStatusBorrador,
+		ID:       "entry-1",
+		TenantID: tenantID,
+		Number:   "001",
+		Date:     time.Now().Format("2006-01-02"),
+		Status:   domain.StatusDraft,
 		Lines: []domain.JournalLine{
 			{AccountID: "1", Debit: 1000, Credit: 0},
 			{AccountID: "2", Debit: 0, Credit: 1000},
@@ -315,7 +368,7 @@ func TestPostEntry_RollbackOnBalanceUpdateError(t *testing.T) {
 
 	svc := service.NewJournalService(jRepo, aRepo, lRepo, uow, audit)
 
-	err := svc.PostEntry(context.Background(), "entry-1")
+	err = svc.PostEntry(ctx, "entry-1")
 	if err == nil {
 		t.Fatal("Se esperaba error de balance al no encontrar cuentas")
 	}
@@ -331,38 +384,45 @@ func TestPostEntry_Success(t *testing.T) {
 	uow := &mockUOW{}
 	audit := &mockAuditService{}
 
+	tenantID := "tenant-alpha"
+	ctx, err := service.WithTenantID(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
 	entry := &domain.JournalEntry{
-		ID:     "entry-1",
-		Number: "001",
-		Date:   time.Now(),
-		Status: domain.EntryStatusBorrador,
+		ID:       "entry-1",
+		TenantID: tenantID,
+		Number:   "001",
+		Date:     time.Now().Format("2006-01-02"),
+		Status:   domain.StatusDraft,
 		Lines: []domain.JournalLine{
-			{AccountID: "1", AccountCode: "110505", Debit: 1000, Credit: 0},
-			{AccountID: "2", AccountCode: "210505", Debit: 0, Credit: 1000},
+			{AccountID: "1", Debit: 1000, Credit: 0},
+			{AccountID: "2", Debit: 0, Credit: 1000},
 		},
 	}
 	jRepo.entries["entry-1"] = entry
 
 	// Configurar cuentas auxiliares activas
-	aRepo.accounts["1"] = &domain.Account{ID: "1", Code: "110505", Type: domain.AccountTypeActivo, Status: domain.AccountStatusActiva, AcceptsMove: true}
-	aRepo.accounts["2"] = &domain.Account{ID: "2", Code: "210505", Type: domain.AccountTypePasivo, Status: domain.AccountStatusActiva, AcceptsMove: true}
+	aRepo.accounts["1"] = &domain.Account{ID: "1", TenantID: tenantID, Code: "110505", Status: domain.AccountActive, AcceptsMove: true}
+	aRepo.accounts["2"] = &domain.Account{ID: "2", TenantID: tenantID, Code: "210505", Status: domain.AccountActive, AcceptsMove: true}
 
 	svc := service.NewJournalService(jRepo, aRepo, lRepo, uow, audit)
 
-	err := svc.PostEntry(context.Background(), "entry-1")
+	err = svc.PostEntry(ctx, "entry-1")
 	if err != nil {
 		t.Fatalf("Error inesperado en PostEntry: %v", err)
 	}
 
-	if entry.Status != domain.EntryStatusContabilizado {
+	if entry.Status != domain.StatusPosted {
 		t.Errorf("Se esperaba estado CONTABILIZADO, obtenido %s", entry.Status)
 	}
 
-	if aRepo.accounts["1"].CurrentBal != 1000 {
-		t.Errorf("Se esperaba balance 1000 para cuenta 1, obtenido %d", aRepo.accounts["1"].CurrentBal)
+	if aRepo.accounts["1"].Balance != 1000 {
+		t.Errorf("Se esperaba balance 1000 para cuenta 1, obtenido %d", aRepo.accounts["1"].Balance)
 	}
-	if aRepo.accounts["2"].CurrentBal != 1000 {
-		t.Errorf("Se esperaba balance 1000 para cuenta 2, obtenido %d", aRepo.accounts["2"].CurrentBal)
+	if aRepo.accounts["2"].Balance != -1000 {
+		t.Errorf("Se esperaba balance -1000 para cuenta 2 (pasivo proyectado), obtenido %d", aRepo.accounts["2"].Balance)
 	}
 
 	if len(lRepo.entries) != 2 {
@@ -381,20 +441,27 @@ func TestReverseEntry_Success(t *testing.T) {
 	uow := &mockUOW{}
 	audit := &mockAuditService{}
 
+	tenantID := "tenant-alpha"
+	ctx, err := service.WithTenantID(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
 	entry := &domain.JournalEntry{
-		ID:     "entry-1",
-		Number: "001",
-		Status: domain.EntryStatusContabilizado,
+		ID:       "entry-1",
+		TenantID: tenantID,
+		Number:   "001",
+		Status:   domain.StatusPosted,
 		Lines: []domain.JournalLine{
-			{AccountID: "1", AccountCode: "110505", Debit: 1000, Credit: 0, Description: "Debito original"},
-			{AccountID: "2", AccountCode: "210505", Debit: 0, Credit: 1000, Description: "Credito original"},
+			{AccountID: "1", Debit: 1000, Credit: 0, Description: "Debito original"},
+			{AccountID: "2", Debit: 0, Credit: 1000, Description: "Credito original"},
 		},
 	}
 	jRepo.entries["entry-1"] = entry
 
 	svc := service.NewJournalService(jRepo, aRepo, lRepo, uow, audit)
 
-	rev, err := svc.ReverseEntry(context.Background(), "entry-1", "Error de digitacion")
+	rev, err := svc.ReverseEntry(ctx, "entry-1", "Error de digitacion")
 	if err != nil {
 		t.Fatalf("Error inesperado en ReverseEntry: %v", err)
 	}
@@ -403,7 +470,7 @@ func TestReverseEntry_Success(t *testing.T) {
 		t.Errorf("Se esperaba número REV-001, obtenido %s", rev.Number)
 	}
 
-	if rev.Status != domain.EntryStatusBorrador {
+	if rev.Status != domain.StatusDraft {
 		t.Errorf("Se esperaba estado BORRADOR para el asiento de reversión, obtenido %s", rev.Status)
 	}
 

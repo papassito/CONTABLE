@@ -3,11 +3,35 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/klik/fcos-kernel/internal/domain"
 	"github.com/klik/fcos-kernel/internal/repository"
 )
+
+type contextKey string
+
+const tenantIDKey contextKey = "tenant_id"
+
+var (
+	ErrTenantRequired = errors.New("FCOS_ERR_SECURITY: tenant_id is required")
+	ErrTenantMismatch = errors.New("FCOS_ERR_SECURITY: tenant_id mismatch between context and request")
+)
+
+func getTenantID(ctx context.Context) (string, error) {
+	tenantID, ok := ctx.Value(tenantIDKey).(string)
+	if !ok || tenantID == "" {
+		return "", ErrTenantRequired
+	}
+	return tenantID, nil
+}
+
+// WithTenantID asocia de forma segura la identidad del tenant al contexto utilizando la clave privada tipada.
+func WithTenantID(ctx context.Context, tenantID string) (context.Context, error) {
+	if tenantID == "" {
+		return nil, ErrTenantRequired
+	}
+	return context.WithValue(ctx, tenantIDKey, tenantID), nil
+}
 
 type AccountService interface {
 	CreateAccount(ctx context.Context, account *domain.Account) error
@@ -29,122 +53,89 @@ func NewAccountService(repo repository.AccountRepository) AccountService {
 }
 
 func (s *accountService) CreateAccount(ctx context.Context, account *domain.Account) error {
+	tenantID, err := getTenantID(ctx)
+	if err != nil {
+		return err
+	}
+
+	if account.TenantID == "" {
+		return ErrTenantRequired
+	}
+
+	if account.TenantID != tenantID {
+		return ErrTenantMismatch
+	}
+
 	if len(account.Code) == 0 {
 		return errors.New("el código contable no puede estar vacío")
 	}
 
-	// Verificación segura de existencia
-	existing, err := s.accountRepo.GetByCode(ctx, account.Code)
-	if err != nil && !errors.Is(err, domain.ErrAccountNotFound) {
-		return fmt.Errorf("error al verificar existencia de la cuenta: %w", err)
+	existing, err := s.accountRepo.GetByCode(ctx, tenantID, account.Code)
+	if err != nil {
+		return err
 	}
 	if existing != nil {
-		return fmt.Errorf("la cuenta contable con código %s ya existe", account.Code)
+		return errors.New("FCOS_ERR_ACCOUNT: account code already exists for this tenant")
 	}
 
-	firstChar := account.Code[0]
-	var expectedType domain.AccountType
-	switch firstChar {
-	case '1':
-		expectedType = domain.AccountTypeActivo
-	case '2':
-		expectedType = domain.AccountTypePasivo
-	case '3':
-		expectedType = domain.AccountTypePatrimonio
-	case '4':
-		expectedType = domain.AccountTypeIngreso
-	case '5':
-		expectedType = domain.AccountTypeGasto
-	case '6':
-		expectedType = domain.AccountTypeCosto
-	default:
-		return errors.New("código contable inválido: debe iniciar con un dígito de 1 a 6")
-	}
-
-	if account.Type != expectedType {
-		return fmt.Errorf("tipo de cuenta %s no coincide con el código %s", account.Type, account.Code)
-	}
-
-	if account.ParentID != nil && *account.ParentID != "" {
-		parent, err := s.accountRepo.GetByID(ctx, *account.ParentID)
-		if err != nil || parent == nil {
+	if account.ParentID != "" {
+		parent, err := s.accountRepo.GetByID(ctx, tenantID, account.ParentID)
+		if err != nil {
+			return err
+		}
+		if parent == nil {
 			return errors.New("cuenta padre no encontrada")
 		}
-		if parent.AcceptsMove {
-			if parent.CurrentBal != 0 {
-				return fmt.Errorf("no se puede convertir la cuenta padre %s en mayorizadora porque posee un saldo de %d centavos", parent.Code, parent.CurrentBal)
-			}
-			parent.AcceptsMove = false
-			if err := s.accountRepo.Update(ctx, parent); err != nil {
-				return err
-			}
+
+		accountsList, err := s.accountRepo.List(ctx, tenantID)
+		if err != nil {
+			return err
+		}
+
+		accountsMap := make(map[string]*domain.Account)
+		for _, a := range accountsList {
+			accountsMap[a.ID] = a
+		}
+		accountsMap[account.ID] = account
+
+		if domain.DetectCycle(accountsMap, account.ID) {
+			return domain.ErrHierarchyCycle
 		}
 	}
 
-	account.Status = domain.AccountStatusActiva
-	account.CurrentBal = 0
+	account.Status = domain.AccountActive
+	account.Balance = 0
 	return s.accountRepo.Create(ctx, account)
 }
 
 func (s *accountService) GetAccount(ctx context.Context, id string) (*domain.Account, error) {
-	return s.accountRepo.GetByID(ctx, id)
+	tenantID, err := getTenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.accountRepo.GetByID(ctx, tenantID, id)
 }
 
 func (s *accountService) GetAccountByCode(ctx context.Context, code string) (*domain.Account, error) {
-	return s.accountRepo.GetByCode(ctx, code)
+	tenantID, err := getTenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.accountRepo.GetByCode(ctx, tenantID, code)
 }
 
 func (s *accountService) ListAccounts(ctx context.Context) ([]*domain.Account, error) {
-	return s.accountRepo.List(ctx, nil)
+	tenantID, err := getTenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.accountRepo.List(ctx, tenantID)
 }
 
 func (s *accountService) UpdateAccount(ctx context.Context, account *domain.Account) error {
-	existing, err := s.accountRepo.GetByID(ctx, account.ID)
-	if err != nil {
-		return err
-	}
-	if existing == nil {
-		return domain.ErrAccountNotFound
-	}
-
-	// Invariante: El saldo nunca debe modificarse directamente mediante UpdateAccount
-	if account.CurrentBal != existing.CurrentBal {
-		return errors.New("no se puede modificar el saldo de la cuenta directamente")
-	}
-
-	// Invariante: El código y tipo son inmutables tras su creación para asegurar la coherencia del libro mayor
-	if account.Code != existing.Code {
-		return errors.New("el código de una cuenta contable existente es inmutable")
-	}
-	if account.Type != existing.Type {
-		return errors.New("el tipo de una cuenta contable existente es inmutable")
-	}
-
-	return s.accountRepo.Update(ctx, account)
+	return errors.New("FCOS_ERR_NOT_IMPLEMENTED: UpdateAccount is not implemented in FCOS v2.2")
 }
 
 func (s *accountService) DisableAccount(ctx context.Context, id string) error {
-	account, err := s.accountRepo.GetByID(ctx, id)
-	if err != nil {
-		return err
-	}
-	if account == nil {
-		return domain.ErrAccountNotFound
-	}
-
-	if account.CurrentBal != 0 {
-		return errors.New("no se puede desactivar una cuenta con saldo diferente de cero")
-	}
-
-	accounts, err := s.accountRepo.List(ctx, map[string]interface{}{"parent_id": id})
-	if err == nil {
-		for _, sub := range accounts {
-			if sub.Status == domain.AccountStatusActiva {
-				return errors.New("no se puede desactivar la cuenta porque tiene subcuentas activas")
-			}
-		}
-	}
-
-	account.Status = domain.AccountStatusInactiva
-	return s.accountRepo.Update(ctx, account)
+	return errors.New("FCOS_ERR_NOT_IMPLEMENTED: DisableAccount is not implemented in FCOS v2.2")
 }

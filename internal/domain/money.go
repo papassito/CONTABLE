@@ -5,7 +5,6 @@ import (
 	"errors"
 	"math"
 	"strconv"
-	"strings"
 )
 
 var (
@@ -58,50 +57,43 @@ func (c Cents) MarshalJSON() ([]byte, error) {
 func (c *Cents) UnmarshalJSON(data []byte) error {
 	var rawString string
 	if err := json.Unmarshal(data, &rawString); err != nil {
-		// Soporte de respaldo si el JSON presenta un tipo numérico crudo accidental en desarrollo.
-		var rawNumber int64
-		if numErr := json.Unmarshal(data, &rawNumber); numErr == nil {
-			*c = Cents(rawNumber)
-			return nil
-		}
 		return ErrInvalidFormat
 	}
 
-	trimmed := strings.TrimSpace(rawString)
-	if len(trimmed) == 0 {
+	if len(rawString) == 0 {
 		return ErrInvalidFormat
 	}
 
 	// Restricción de ARCHITECTURE.md Sección 4: Se rechaza -0 de forma explícita
-	if trimmed == "-0" {
+	if rawString == "-0" {
 		return ErrInvalidFormat
 	}
 
 	// Restricción de REQUIREMENTS.md (NUM-02): Rechazar ceros iniciales (e.g. "05", "-05")
-	if len(trimmed) > 1 {
-		if trimmed[0] == '0' {
+	if len(rawString) > 1 {
+		if rawString[0] == '0' {
 			return ErrInvalidFormat
 		}
-		if trimmed[0] == '-' && trimmed[1] == '0' {
+		if rawString[0] == '-' && rawString[1] == '0' {
 			return ErrInvalidFormat
 		}
 	}
 
 	// Asegurar que contiene únicamente dígitos y un signo menos opcional al inicio (sin puntos, e ni espacios intermedios)
 	start := 0
-	if trimmed[0] == '-' {
+	if rawString[0] == '-' {
 		start = 1
-		if len(trimmed) == 1 {
+		if len(rawString) == 1 {
 			return ErrInvalidFormat
 		}
 	}
-	for i := start; i < len(trimmed); i++ {
-		if trimmed[i] < '0' || trimmed[i] > '9' {
+	for i := start; i < len(rawString); i++ {
+		if rawString[i] < '0' || rawString[i] > '9' {
 			return ErrInvalidFormat
 		}
 	}
 
-	val, err := strconv.ParseInt(trimmed, 10, 64)
+	val, err := strconv.ParseInt(rawString, 10, 64)
 	if err != nil {
 		return ErrInvalidFormat
 	}
